@@ -25,15 +25,16 @@ clarity as first-class goals.
 - `luxcipher/` contains the desktop app and core logic.
 - `docs/ROADMAP.md` tracks the incremental build plan.
 - `docs/SECURITY.md` collects security rules and decisions.
-- `docs/IMPLEMENTATION_NOTES.md` explains implementation decisions.
-- `output/pdf/luxcipher-implementation-notes.pdf` is the generated PDF version
-  of the implementation notes.
+- `docs/IMPLEMENTATION_NOTES.md` explains implementation decisions locally and
+  is intentionally ignored by Git.
 - `tools/build_implementation_notes_pdf.py` regenerates the implementation
-  notes PDF.
+  notes PDF locally under `output/pdf/`.
 
 ## Run The Desktop App
 
 LuxCipher currently starts with a secure password generator desktop app.
+On first launch it creates a local account; later launches require the master
+password before showing the generator.
 
 Requirements:
 

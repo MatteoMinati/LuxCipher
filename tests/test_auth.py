@@ -77,6 +77,13 @@ class LocalAccountTests(unittest.TestCase):
                 kdf=fast_kdf(),
             )
 
+        with self.assertRaises(ValueError):
+            LocalAccount.create(
+                username="matteo",
+                master_password=" " * MIN_MASTER_PASSWORD_LENGTH,
+                kdf=fast_kdf(),
+            )
+
     def test_rejects_invalid_username(self) -> None:
         with self.assertRaises(ValueError):
             LocalAccount.create(
@@ -114,6 +121,18 @@ class LocalAccountTests(unittest.TestCase):
     def test_rejects_tampered_scrypt_parameters(self) -> None:
         kdf_data = fast_kdf().to_dict()
         kdf_data["n"] = 2**20
+
+        with self.assertRaises(ValueError):
+            ScryptParameters.from_dict(kdf_data)
+
+        kdf_data = fast_kdf().to_dict()
+        kdf_data["n"] = 2**8
+
+        with self.assertRaises(ValueError):
+            ScryptParameters.from_dict(kdf_data)
+
+        kdf_data = fast_kdf().to_dict()
+        kdf_data["maxmem"] = 1
 
         with self.assertRaises(ValueError):
             ScryptParameters.from_dict(kdf_data)

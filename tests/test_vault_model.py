@@ -80,6 +80,14 @@ class VaultModelTests(unittest.TestCase):
                 updated_at=updated_at,
             )
 
+    def test_rejects_naive_serialized_timestamps(self) -> None:
+        entry = VaultEntry.create(title="Email", password="secret")
+        data = entry.to_dict()
+        data["createdAt"] = "2026-08-10T12:00:00"
+
+        with self.assertRaises(ValueError):
+            VaultEntry.from_dict(data)
+
 
 if __name__ == "__main__":
     unittest.main()

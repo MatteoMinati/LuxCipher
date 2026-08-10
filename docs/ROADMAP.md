@@ -43,6 +43,9 @@ Current model status:
 - `ScryptParameters` stores public KDF parameters.
 - `verify_master_password` checks a candidate password with constant-time
   comparison.
+- `AccountStore` saves and loads local account metadata as JSON.
+- The desktop UI now shows first-run account creation and later login before
+  the password generator.
 - Vault encryption key derivation is intentionally not implemented yet.
 
 ## Step 3: Local Encryption

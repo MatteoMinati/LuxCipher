@@ -3,6 +3,7 @@ import unittest
 
 from luxcipher.password_generator import (
     AMBIGUOUS_CHARACTERS,
+    MAX_PASSWORD_LENGTH,
     MIN_PASSWORD_LENGTH,
     SYMBOLS,
     PasswordOptions,
@@ -47,6 +48,19 @@ class PasswordGeneratorTests(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             generate_password(options)
+
+    def test_rejects_too_long_password(self) -> None:
+        options = PasswordOptions(length=MAX_PASSWORD_LENGTH + 1)
+
+        with self.assertRaises(ValueError):
+            generate_password(options)
+
+    def test_rejects_invalid_option_types(self) -> None:
+        with self.assertRaises(TypeError):
+            PasswordOptions(length="20")
+
+        with self.assertRaises(TypeError):
+            PasswordOptions(use_digits="yes")
 
     def test_allows_minimum_secure_length(self) -> None:
         options = PasswordOptions(

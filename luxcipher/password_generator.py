@@ -8,6 +8,7 @@ from dataclasses import dataclass
 
 
 AMBIGUOUS_CHARACTERS = set("0OIl1")
+MAX_PASSWORD_LENGTH = 128
 MIN_PASSWORD_LENGTH = 12
 SYMBOLS = "!@#$%^&*()-_=+[]{};:,.?/"
 
@@ -21,6 +22,20 @@ class PasswordOptions:
     use_symbols: bool = True
     exclude_ambiguous: bool = False
 
+    def __post_init__(self) -> None:
+        if not isinstance(self.length, int) or isinstance(self.length, bool):
+            raise TypeError("length must be an integer.")
+
+        for field_name in (
+            "use_lowercase",
+            "use_uppercase",
+            "use_digits",
+            "use_symbols",
+            "exclude_ambiguous",
+        ):
+            if not isinstance(getattr(self, field_name), bool):
+                raise TypeError(f"{field_name} must be a boolean.")
+
 
 def generate_password(options: PasswordOptions) -> str:
     """Generate a password with at least one character from each enabled set."""
@@ -28,6 +43,9 @@ def generate_password(options: PasswordOptions) -> str:
 
     if options.length < MIN_PASSWORD_LENGTH:
         raise ValueError(f"Length must be at least {MIN_PASSWORD_LENGTH} characters.")
+
+    if options.length > MAX_PASSWORD_LENGTH:
+        raise ValueError(f"Length cannot be greater than {MAX_PASSWORD_LENGTH} characters.")
 
     if not pools:
         raise ValueError("Select at least one character set.")

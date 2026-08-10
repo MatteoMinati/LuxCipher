@@ -66,6 +66,12 @@ the verifier from the candidate master password and compares it with
 Stored KDF parameters are validated with upper bounds before use. This keeps a
 tampered local account record from requesting unreasonable scrypt parameters.
 
+Local account metadata is stored as JSON on the user's device. Writes are
+performed through a temporary file and atomic replacement, and existing account
+metadata is not overwritten unless the caller explicitly asks for that behavior.
+File permissions are restricted to the current user where the operating system
+supports it.
+
 This protects against accidentally storing the master password. It does not make
 a weak master password safe if an attacker obtains the local account record,
 because offline guessing is still possible. A strong master password remains

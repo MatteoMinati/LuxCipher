@@ -9,9 +9,11 @@ import hmac
 import re
 import secrets
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 from uuid import UUID, uuid4
+
+from luxcipher.time_utils import format_datetime, parse_datetime, require_timezone_aware, utc_now
 
 
 ACCOUNT_SCHEMA_VERSION = 1
@@ -21,9 +23,11 @@ MIN_MASTER_PASSWORD_LENGTH = 12
 SCRYPT_DKLEN = 32
 SCRYPT_MAX_DKLEN = 64
 SCRYPT_MAXMEM = 64 * 1024 * 1024
+SCRYPT_MAXMEM_LIMIT = 256 * 1024 * 1024
 SCRYPT_MAX_N = 2**16
 SCRYPT_MAX_P = 4
 SCRYPT_MAX_R = 16
+SCRYPT_MIN_N = 2**10
 SCRYPT_N = 2**14
 SCRYPT_P = 1
 SCRYPT_R = 8
@@ -64,14 +68,25 @@ class ScryptParameters:
         )
 
     def __post_init__(self) -> None:
+        _require_string("name", self.name)
+
         if self.name != KDF_NAME:
             raise ValueError(f"Unsupported KDF: {self.name}.")
 
         if len(_decode_base64("salt", self.salt)) < SALT_BYTES:
             raise ValueError(f"salt must be at least {SALT_BYTES} bytes.")
 
+        _require_int("n", self.n)
+        _require_int("r", self.r)
+        _require_int("p", self.p)
+        _require_int("dklen", self.dklen)
+        _require_int("maxmem", self.maxmem)
+
         if self.n < 2 or self.n & (self.n - 1):
             raise ValueError("scrypt n must be a power of two greater than one.")
+
+        if self.n < SCRYPT_MIN_N:
+            raise ValueError(f"scrypt n must be at least {SCRYPT_MIN_N}.")
 
         if self.n > SCRYPT_MAX_N:
             raise ValueError(f"scrypt n cannot be greater than {SCRYPT_MAX_N}.")
@@ -93,6 +108,12 @@ class ScryptParameters:
 
         if self.maxmem < 0:
             raise ValueError("scrypt maxmem cannot be negative.")
+
+        if self.maxmem > SCRYPT_MAXMEM_LIMIT:
+            raise ValueError(f"scrypt maxmem cannot be greater than {SCRYPT_MAXMEM_LIMIT}.")
+
+        if self.maxmem < _minimum_scrypt_maxmem(self.n, self.r):
+            raise ValueError("scrypt maxmem is too low for n and r.")
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -117,11 +138,6 @@ class ScryptParameters:
             maxmem=int(data.get("maxmem", SCRYPT_MAXMEM)),
         )
 
-
-def _utc_now() -> datetime:
-    return datetime.now(timezone.utc)
-
-
 @dataclass(frozen=True)
 class LocalAccount:
     """Local-only account metadata used to verify a master password."""
@@ -131,8 +147,8 @@ class LocalAccount:
     kdf: ScryptParameters
     password_verifier: str
     schema_version: int = ACCOUNT_SCHEMA_VERSION
-    created_at: datetime = field(default_factory=_utc_now)
-    updated_at: datetime = field(default_factory=_utc_now)
+    created_at: datetime = field(default_factory=utc_now)
+    updated_at: datetime = field(default_factory=utc_now)
 
     @classmethod
     def create(
@@ -146,7 +162,7 @@ class LocalAccount:
         _require_master_password_strength(master_password)
 
         account_kdf = kdf or ScryptParameters.create()
-        now = _utc_now()
+        now = utc_now()
         return cls(
             id=str(uuid4()),
             username=normalized_username,
@@ -171,8 +187,8 @@ class LocalAccount:
         if len(_decode_base64("password_verifier", self.password_verifier)) != VERIFIER_BYTES:
             raise ValueError(f"password_verifier must be {VERIFIER_BYTES} bytes.")
 
-        _require_timezone("created_at", self.created_at)
-        _require_timezone("updated_at", self.updated_at)
+        require_timezone_aware("created_at", self.created_at)
+        require_timezone_aware("updated_at", self.updated_at)
 
         if self.updated_at < self.created_at:
             raise ValueError("updated_at cannot be earlier than created_at.")
@@ -189,8 +205,8 @@ class LocalAccount:
             "schemaVersion": self.schema_version,
             "id": self.id,
             "username": self.username,
-            "createdAt": _format_datetime(self.created_at),
-            "updatedAt": _format_datetime(self.updated_at),
+            "createdAt": format_datetime(self.created_at),
+            "updatedAt": format_datetime(self.updated_at),
             "kdf": self.kdf.to_dict(),
             "passwordVerifier": self.password_verifier,
         }
@@ -201,8 +217,8 @@ class LocalAccount:
             schema_version=int(data["schemaVersion"]),
             id=data["id"],
             username=data["username"],
-            created_at=_parse_datetime(data["createdAt"]),
-            updated_at=_parse_datetime(data["updatedAt"]),
+            created_at=parse_datetime(data["createdAt"]),
+            updated_at=parse_datetime(data["updatedAt"]),
             kdf=ScryptParameters.from_dict(data["kdf"]),
             password_verifier=data["passwordVerifier"],
         )
@@ -245,6 +261,9 @@ def _normalize_username(username: str) -> str:
 def _require_master_password_strength(master_password: str) -> None:
     _require_string("master_password", master_password)
 
+    if not master_password.strip():
+        raise ValueError("master_password cannot be blank.")
+
     if len(master_password) < MIN_MASTER_PASSWORD_LENGTH:
         raise ValueError(
             f"master_password must be at least {MIN_MASTER_PASSWORD_LENGTH} characters."
@@ -256,18 +275,9 @@ def _require_string(field_name: str, value: Any) -> None:
         raise TypeError(f"{field_name} must be a string.")
 
 
-def _require_timezone(field_name: str, value: datetime) -> None:
-    if value.tzinfo is None or value.tzinfo.utcoffset(value) is None:
-        raise ValueError(f"{field_name} must be timezone-aware.")
-
-
-def _format_datetime(value: datetime) -> str:
-    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
-
-
-def _parse_datetime(value: str) -> datetime:
-    _require_string("datetime", value)
-    return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(timezone.utc)
+def _require_int(field_name: str, value: Any) -> None:
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise TypeError(f"{field_name} must be an integer.")
 
 
 def _encode_base64(value: bytes) -> str:
@@ -280,3 +290,7 @@ def _decode_base64(field_name: str, value: str) -> bytes:
         return base64.b64decode(value.encode("ascii"), altchars=b"-_", validate=True)
     except (binascii.Error, ValueError, UnicodeEncodeError) as error:
         raise ValueError(f"{field_name} must be valid base64.") from error
+
+
+def _minimum_scrypt_maxmem(n: int, r: int) -> int:
+    return 128 * n * r

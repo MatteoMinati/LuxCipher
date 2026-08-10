@@ -12,6 +12,11 @@
 *.pfx
 secrets/
 vaults/
+.luxcipher/
+
+# Local implementation notes
+docs/IMPLEMENTATION_NOTES.md
+output/pdf/
 
 # Dependency and build output
 node_modules/

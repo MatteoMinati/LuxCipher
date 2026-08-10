@@ -27,12 +27,23 @@ Current model status:
 - `VaultData` stores the decrypted vault payload in memory.
 - Persistence and encryption are intentionally not implemented yet.
 
-## Step 2: Key Derivation
+## Step 2: Local Authentication And Key Derivation
 
-- Derive an encryption key from the master password.
-- Use a random salt per vault.
-- Store the salt, not the master password.
-- Pick a proven KDF before writing encryption code.
+- Create local-only account metadata.
+- Verify the master password without storing it.
+- Use a random salt per local account.
+- Store public KDF parameters and a verifier, not the master password.
+- Derive an encryption key from the master password before vault storage.
+- Use a random salt per vault if account authentication and vault encryption
+  need separate derivation contexts.
+
+Current model status:
+
+- `LocalAccount` stores local account metadata.
+- `ScryptParameters` stores public KDF parameters.
+- `verify_master_password` checks a candidate password with constant-time
+  comparison.
+- Vault encryption key derivation is intentionally not implemented yet.
 
 ## Step 3: Local Encryption
 

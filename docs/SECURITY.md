@@ -14,6 +14,9 @@ that is understandable without inventing new cryptography.
 - Use a unique random salt for key derivation.
 - Use a unique random nonce or IV for each encryption operation.
 - Treat all decrypted data as sensitive.
+- Store local account metadata on the device only.
+- Store a password verifier, never the master password or derived key.
+- Compare password verifiers with constant-time comparison.
 - Keep vault entry titles, usernames, passwords, URLs, and notes inside the
   encrypted payload once storage is implemented.
 
@@ -33,6 +36,40 @@ encrypted file format.
 The future encrypted file should keep only public cryptographic metadata outside
 the ciphertext, such as schema version, KDF name, salt, KDF parameters,
 encryption algorithm, and nonce or IV.
+
+## Local Authentication Decision
+
+LuxCipher uses local-only accounts. There is no remote identity provider, no
+cloud login, and no server-side account recovery in the current design.
+
+The local account record stores:
+
+- account schema version;
+- local account id;
+- username;
+- creation and update timestamps;
+- public scrypt parameters;
+- password verifier.
+
+The local account record does not store:
+
+- master password;
+- derived master key;
+- decrypted vault data;
+- vault entry data.
+
+The current verifier is produced by deriving a key with scrypt and then applying
+HMAC-SHA256 with a LuxCipher-specific context string. Verification recomputes
+the verifier from the candidate master password and compares it with
+`hmac.compare_digest`.
+
+Stored KDF parameters are validated with upper bounds before use. This keeps a
+tampered local account record from requesting unreasonable scrypt parameters.
+
+This protects against accidentally storing the master password. It does not make
+a weak master password safe if an attacker obtains the local account record,
+because offline guessing is still possible. A strong master password remains
+mandatory.
 
 ## Early Threat Model
 

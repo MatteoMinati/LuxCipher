@@ -28,6 +28,8 @@ clarity as first-class goals.
 - `docs/IMPLEMENTATION_NOTES.md` explains implementation decisions.
 - `output/pdf/luxcipher-implementation-notes.pdf` is the generated PDF version
   of the implementation notes.
+- `tools/build_implementation_notes_pdf.py` regenerates the implementation
+  notes PDF.
 
 ## Run The Desktop App
 
@@ -47,6 +49,12 @@ Run tests:
 
 ```bash
 python -m unittest discover -s tests
+```
+
+Regenerate implementation notes PDF:
+
+```bash
+python tools/build_implementation_notes_pdf.py
 ```
 
 ## Development Note

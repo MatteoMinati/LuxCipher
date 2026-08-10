@@ -25,6 +25,9 @@ clarity as first-class goals.
 - `luxcipher/` contains the desktop app and core logic.
 - `docs/ROADMAP.md` tracks the incremental build plan.
 - `docs/SECURITY.md` collects security rules and decisions.
+- `docs/IMPLEMENTATION_NOTES.md` explains implementation decisions.
+- `output/pdf/luxcipher-implementation-notes.pdf` is the generated PDF version
+  of the implementation notes.
 
 ## Run The Desktop App
 

@@ -6,9 +6,9 @@ completed, reviewed, and tested before moving to the next one.
 ## Step 1: Vault Shape
 
 - Start with a secure desktop password generator.
-- Decide what a password entry contains.
-- Decide how entries are identified.
-- Decide what metadata can stay unencrypted, if anything.
+- Define the decrypted vault model in `luxcipher/vault_model.py`.
+- Keep entry fields inside the future encrypted payload.
+- Keep only public crypto parameters outside the future ciphertext.
 
 Suggested entry fields:
 
@@ -20,6 +20,12 @@ Suggested entry fields:
 - `notes`
 - `createdAt`
 - `updatedAt`
+
+Current model status:
+
+- `VaultEntry` stores one decrypted password record in memory.
+- `VaultData` stores the decrypted vault payload in memory.
+- Persistence and encryption are intentionally not implemented yet.
 
 ## Step 2: Key Derivation
 

@@ -14,14 +14,25 @@ that is understandable without inventing new cryptography.
 - Use a unique random salt for key derivation.
 - Use a unique random nonce or IV for each encryption operation.
 - Treat all decrypted data as sensitive.
+- Keep vault entry titles, usernames, passwords, URLs, and notes inside the
+  encrypted payload once storage is implemented.
 
 ## Decisions To Make Before Coding Crypto
 
-- Programming language and runtime.
+- Programming language and runtime: Python desktop app with Tkinter for now.
 - KDF choice, such as Argon2id, scrypt, or PBKDF2.
 - Authenticated encryption choice, such as XChaCha20-Poly1305 or AES-GCM.
 - Vault file format.
-- CLI, desktop app, browser extension, or web app first.
+- UI direction: desktop app first. Web can be added later.
+
+## Data Model Decision
+
+The current vault model represents decrypted in-memory data only. It is not the
+encrypted file format.
+
+The future encrypted file should keep only public cryptographic metadata outside
+the ciphertext, such as schema version, KDF name, salt, KDF parameters,
+encryption algorithm, and nonce or IV.
 
 ## Early Threat Model
 

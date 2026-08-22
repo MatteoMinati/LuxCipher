@@ -1,85 +1,81 @@
+from unittest.mock import MagicMock
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
 from luxcipher.account_store import AccountStore
-from luxcipher.desktop_app import LuxCipherApp
+from luxcipher.desktop_app import LuxCipherFletApp, LuxCipherApp
 
 
 class DesktopAppTests(unittest.TestCase):
     def test_desktop_app_class_is_importable(self) -> None:
+        self.assertIsNotNone(LuxCipherFletApp)
         self.assertIsNotNone(LuxCipherApp)
 
-    def test_desktop_app_initializes_and_switches_modes(self) -> None:
+    def test_flet_app_logic(self) -> None:
         with TemporaryDirectory() as directory:
             db_path = Path(directory) / "vault.db"
             store = AccountStore(db_path)
-            app = LuxCipherApp(account_store=store)
-            app.withdraw()  # do not show GUI window during tests
+            mock_page = MagicMock()
+            mock_page.controls = []
 
-            try:
-                # Initially setup screen because db doesn't exist
-                self.assertFalse(store.exists())
+            app = LuxCipherFletApp(page=mock_page, account_store=store)
 
-                # Can switch explicitly to login screen
-                app._show_auth_screen("login")
+            # Initially setup mode since db does not exist
+            self.assertEqual(app.auth_mode, "setup")
 
-                # Can switch back to setup screen
-                app._show_auth_screen("setup")
+            # Switch mode
+            app._set_auth_mode("login")
+            self.assertEqual(app.auth_mode, "login")
+            app._set_auth_mode("setup")
+            self.assertEqual(app.auth_mode, "setup")
 
-                # Try creating without username
-                app.setup_username.set("")
-                app.setup_master_password.set("MySuperPassword123!")
-                app.setup_confirm_password.set("MySuperPassword123!")
-                app._create_account()
-                self.assertFalse(store.is_open())
-                self.assertEqual(app.auth_status.get(), "Inserisci un nome utente")
+            # Try create account without username
+            app.auth_username_field.value = ""
+            app.auth_password_field.value = "SuperPass123!"
+            app.auth_confirm_field.value = "SuperPass123!"
+            app._submit_auth()
+            self.assertFalse(store.is_open())
 
-                # Create account with username
-                app.setup_username.set("matteo")
-                app._create_account()
+            # Create account with username
+            app.auth_username_field.value = "matteo"
+            app._submit_auth()
+            self.assertTrue(store.is_open())
+            self.assertEqual(app.current_username, "matteo")
+            self.assertEqual(store.get_account_username(), "matteo")
 
-                self.assertTrue(store.is_open())
-                self.assertTrue(store.exists())
-                self.assertEqual(app.current_username.get(), "matteo")
-                self.assertEqual(store.get_account_username(), "matteo")
+            # Add an account
+            app.new_service_field.value = "GitHub"
+            app.new_user_field.value = "octocat"
+            app.new_pwd_field.value = "token123"
+            app._add_account_entry()
+            self.assertEqual(len(store.get_all_accounts()), 1)
 
-                # Add an account entry via GUI methods
-                app.new_service.set("GitHub")
-                app.new_username.set("octocat")
-                app.new_password.set("token123")
-                app._add_account()
+            # Lock vault
+            app._lock_vault()
+            self.assertFalse(store.is_open())
+            self.assertEqual(app.auth_mode, "login")
 
-                self.assertEqual(len(store.get_all_accounts()), 1)
+            # Try login with wrong password
+            app.auth_username_field.value = "matteo"
+            app.auth_password_field.value = "WrongPass123!"
+            app._submit_auth()
+            self.assertFalse(store.is_open())
 
-                # Lock the vault
-                app._lock()
-                self.assertFalse(store.is_open())
+            # Try login with wrong username
+            app.auth_username_field.value = "wrong_user"
+            app.auth_password_field.value = "SuperPass123!"
+            app._submit_auth()
+            self.assertFalse(store.is_open())
 
-                # Try login with wrong password
-                app.login_username.set("matteo")
-                app.login_master_password.set("WrongPassword123!")
-                app._unlock()
-                self.assertFalse(store.is_open())
-                self.assertEqual(app.auth_status.get(), "Master Password errata")
+            # Login with correct credentials
+            app.auth_username_field.value = "matteo"
+            app.auth_password_field.value = "SuperPass123!"
+            app._submit_auth()
+            self.assertTrue(store.is_open())
+            self.assertEqual(app.current_username, "matteo")
 
-                # Try login with wrong username
-                app.login_username.set("wrong_user")
-                app.login_master_password.set("MySuperPassword123!")
-                app._unlock()
-                self.assertFalse(store.is_open())
-                self.assertEqual(app.auth_status.get(), "Nome Utente o Master Password errati")
-
-                # Login with correct username and password
-                app.login_username.set("matteo")
-                app.login_master_password.set("MySuperPassword123!")
-                app._unlock()
-                self.assertTrue(store.is_open())
-                self.assertEqual(app.current_username.get(), "matteo")
-
-            finally:
-                store.close()
-                app.destroy()
+            store.close()
 
 
 if __name__ == "__main__":

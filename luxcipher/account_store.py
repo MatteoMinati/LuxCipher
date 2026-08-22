@@ -1,82 +1,124 @@
-"""Local JSON storage for LuxCipher account metadata."""
+"""Encrypted SQLCipher storage for LuxCipher accounts."""
 
 from __future__ import annotations
 
-import json
 import os
-from dataclasses import dataclass
-from json import JSONDecodeError
 from pathlib import Path
 from typing import Any
 
-from luxcipher.auth import LocalAccount
+from sqlcipher3 import dbapi2 as sqlite3
 
 
-ACCOUNT_FILE_NAME = "account.json"
+VAULT_DB_FILE = "vault.db"
 APP_DIR_NAME = "LuxCipher"
 ENV_HOME = "LUXCIPHER_HOME"
 
 
 class AccountStoreError(RuntimeError):
-    """Raised when local account metadata cannot be read or written."""
+    """Raised when vault storage operations fail."""
 
 
-@dataclass(frozen=True)
 class AccountStore:
-    path: Path
+    """Manages encrypted SQLCipher database for accounts."""
+
+    def __init__(self, path: str | Path = VAULT_DB_FILE) -> None:
+        self.path = Path(path)
+        self.conn: sqlite3.Connection | None = None
 
     @classmethod
     def default(cls) -> "AccountStore":
-        return cls(default_account_path())
+        return cls(default_db_path())
 
     def exists(self) -> bool:
         return self.path.is_file()
 
-    def load(self) -> LocalAccount:
+    def is_open(self) -> bool:
+        return self.conn is not None
+
+    def open(self, master_key: bytes) -> None:
+        """Open or initialize the encrypted SQLCipher database using master_key."""
+        if not isinstance(master_key, (bytes, bytearray)):
+            raise TypeError("master_key must be bytes.")
+
+        self.close()
+        key_hex = master_key.hex()
+
+        if self.path.parent and str(self.path.parent) != ".":
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+
+        conn = sqlite3.connect(str(self.path))
         try:
-            data = json.loads(self.path.read_text(encoding="utf-8"))
-            if not isinstance(data, dict):
-                raise ValueError("account file must contain a JSON object.")
-            return LocalAccount.from_dict(data)
-        except FileNotFoundError as error:
-            raise AccountStoreError("Local account does not exist.") from error
-        except (JSONDecodeError, KeyError, TypeError, ValueError, OSError) as error:
-            raise AccountStoreError("Local account metadata is invalid.") from error
+            cursor = conn.cursor()
+            cursor.execute(f"PRAGMA key = \"x'{key_hex}'\";")
+            cursor.execute("PRAGMA temp_store = MEMORY;")
+            cursor.execute("PRAGMA secure_delete = ON;")
+            cursor.execute(
+                """CREATE TABLE IF NOT EXISTS accounts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    service TEXT NOT NULL,
+                    username TEXT NOT NULL,
+                    password TEXT NOT NULL
+                );"""
+            )
+            cursor.execute("SELECT count(*) FROM sqlite_master;")
+            conn.commit()
+        except (sqlite3.DatabaseError, MemoryError) as error:
+            conn.close()
+            raise ValueError("Master Password errata") from error
+        except Exception:
+            conn.close()
+            raise
 
-    def save(self, account: LocalAccount, *, overwrite: bool = False) -> None:
-        if not isinstance(account, LocalAccount):
-            raise TypeError("account must be a LocalAccount object.")
+        self.conn = conn
+        _restrict_to_current_user(self.path)
 
-        if self.exists() and not overwrite:
-            raise AccountStoreError("Local account already exists.")
+    def add_account(self, service: str, username: str, password: str) -> None:
+        """Insert account credentials into the encrypted vault."""
+        if self.conn is None:
+            raise AccountStoreError("Database is not open.")
 
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        payload = _to_json(account.to_dict())
-        temporary_path = self.path.with_name(f"{self.path.name}.tmp")
+        if not isinstance(service, str) or not isinstance(username, str) or not isinstance(password, str):
+            raise TypeError("service, username, and password must be strings.")
 
-        try:
-            temporary_path.write_text(payload, encoding="utf-8")
-            _restrict_to_current_user(temporary_path)
-            temporary_path.replace(self.path)
-            _restrict_to_current_user(self.path)
-        except OSError as error:
-            raise AccountStoreError("Could not save local account metadata.") from error
+        cursor = self.conn.cursor()
+        cursor.execute(
+            "INSERT INTO accounts (service, username, password) VALUES (?, ?, ?);",
+            (service, username, password),
+        )
+        self.conn.commit()
+
+    def get_all_accounts(self) -> list[tuple[Any, ...]]:
+        """Retrieve all account credentials from the encrypted vault."""
+        if self.conn is None:
+            raise AccountStoreError("Database is not open.")
+
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT id, service, username, password FROM accounts;")
+        return cursor.fetchall()
+
+    def close(self) -> None:
+        """Close the database connection and release encryption context."""
+        if self.conn is not None:
+            self.conn.close()
+            self.conn = None
+
+    def __enter__(self) -> "AccountStore":
+        return self
+
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        self.close()
 
 
-def default_account_path() -> Path:
+def default_db_path() -> Path:
     configured_home = os.environ.get(ENV_HOME)
     if configured_home:
-        return Path(configured_home).expanduser() / ACCOUNT_FILE_NAME
+        return Path(configured_home).expanduser() / VAULT_DB_FILE
 
     local_app_data = os.environ.get("LOCALAPPDATA")
     if local_app_data:
-        return Path(local_app_data) / APP_DIR_NAME / ACCOUNT_FILE_NAME
+        return Path(local_app_data) / APP_DIR_NAME / VAULT_DB_FILE
 
-    return Path.home() / f".{APP_DIR_NAME.lower()}" / ACCOUNT_FILE_NAME
-
-
-def _to_json(data: dict[str, Any]) -> str:
-    return json.dumps(data, indent=2, sort_keys=True) + "\n"
+    return Path.home() / f".{APP_DIR_NAME.lower()}" / VAULT_DB_FILE
 
 
 def _restrict_to_current_user(path: Path) -> None:

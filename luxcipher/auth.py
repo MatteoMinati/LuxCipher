@@ -6,12 +6,15 @@ import base64
 import binascii
 import hashlib
 import hmac
+from pathlib import Path
 import re
 import secrets
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 from uuid import UUID, uuid4
+
+import argon2.low_level
 
 from luxcipher.time_utils import format_datetime, parse_datetime, require_timezone_aware, utc_now
 
@@ -34,6 +37,52 @@ SCRYPT_R = 8
 SALT_BYTES = 16
 USERNAME_PATTERN = re.compile(r"^[A-Za-z0-9_.-]{3,64}$")
 VERIFIER_BYTES = 32
+
+VAULT_SALT_FILE = "vault.salt"
+ARGON2_TIME_COST = 3
+ARGON2_MEMORY_COST = 65536
+ARGON2_PARALLELISM = 4
+ARGON2_HASH_LEN = 32
+
+
+def get_or_create_salt(salt_path: str | Path = VAULT_SALT_FILE) -> bytes:
+    """Load an existing 16-byte salt from vault.salt or create and persist a new one."""
+    path = Path(salt_path)
+    if path.is_file():
+        salt = path.read_bytes()
+        if len(salt) == SALT_BYTES:
+            return salt
+
+    salt = secrets.token_bytes(SALT_BYTES)
+    if path.parent and str(path.parent) != ".":
+        path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(salt)
+    return salt
+
+
+def derive_master_key(
+    master_password: str,
+    salt: bytes | None = None,
+    salt_path: str | Path = VAULT_SALT_FILE,
+) -> bytes:
+    """Derive a 32-byte master key from the master password using Argon2id with OWASP parameters."""
+    _require_string("master_password", master_password)
+    if salt is None:
+        salt = get_or_create_salt(salt_path)
+
+    if not isinstance(salt, (bytes, bytearray)):
+        raise TypeError("salt must be bytes.")
+
+    return argon2.low_level.hash_secret_raw(
+        secret=master_password.encode("utf-8"),
+        salt=salt,
+        time_cost=ARGON2_TIME_COST,
+        memory_cost=ARGON2_MEMORY_COST,
+        parallelism=ARGON2_PARALLELISM,
+        hash_len=ARGON2_HASH_LEN,
+        type=argon2.low_level.Type.ID,
+    )
+
 
 
 @dataclass(frozen=True)

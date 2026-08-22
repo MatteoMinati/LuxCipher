@@ -1,3 +1,5 @@
+from pathlib import Path
+from tempfile import TemporaryDirectory
 import unittest
 
 from luxcipher.auth import (
@@ -5,7 +7,10 @@ from luxcipher.auth import (
     MIN_MASTER_PASSWORD_LENGTH,
     LocalAccount,
     ScryptParameters,
+    derive_master_key,
+    get_or_create_salt,
 )
+
 
 
 MASTER_PASSWORD = "correct horse battery staple"
@@ -145,5 +150,47 @@ class LocalAccountTests(unittest.TestCase):
             ScryptParameters.from_dict(kdf_data)
 
 
+class Argon2MasterKeyTests(unittest.TestCase):
+    def test_get_or_create_salt_creates_and_persists_16_bytes(self) -> None:
+        with TemporaryDirectory() as directory:
+            salt_file = Path(directory) / "vault.salt"
+            self.assertFalse(salt_file.exists())
+
+            salt1 = get_or_create_salt(salt_file)
+            self.assertEqual(len(salt1), 16)
+            self.assertTrue(salt_file.is_file())
+            self.assertEqual(salt_file.read_bytes(), salt1)
+
+            # Second call should load existing salt
+            salt2 = get_or_create_salt(salt_file)
+            self.assertEqual(salt1, salt2)
+
+    def test_derive_master_key_returns_32_bytes_consistently(self) -> None:
+        salt = b"\x01" * 16
+        key1 = derive_master_key("my_secure_password", salt=salt)
+        key2 = derive_master_key("my_secure_password", salt=salt)
+
+        self.assertIsInstance(key1, bytes)
+        self.assertEqual(len(key1), 32)
+        self.assertEqual(key1, key2)
+
+        # Different password produces different key
+        key3 = derive_master_key("different_password", salt=salt)
+        self.assertNotEqual(key1, key3)
+
+        # Different salt produces different key
+        diff_salt = b"\x02" * 16
+        key4 = derive_master_key("my_secure_password", salt=diff_salt)
+        self.assertNotEqual(key1, key4)
+
+    def test_derive_master_key_validations(self) -> None:
+        with self.assertRaises(TypeError):
+            derive_master_key(12345)  # type: ignore
+
+        with self.assertRaises(TypeError):
+            derive_master_key("password", salt="not_bytes")  # type: ignore
+
+
 if __name__ == "__main__":
     unittest.main()
+

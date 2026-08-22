@@ -53,6 +53,12 @@ class AccountStore:
             cursor.execute("PRAGMA temp_store = MEMORY;")
             cursor.execute("PRAGMA secure_delete = ON;")
             cursor.execute(
+                """CREATE TABLE IF NOT EXISTS metadata (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                );"""
+            )
+            cursor.execute(
                 """CREATE TABLE IF NOT EXISTS accounts (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     service TEXT NOT NULL,
@@ -71,6 +77,30 @@ class AccountStore:
 
         self.conn = conn
         _restrict_to_current_user(self.path)
+
+    def set_account_username(self, username: str) -> None:
+        """Store the account username in the encrypted metadata table."""
+        if self.conn is None:
+            raise AccountStoreError("Database is not open.")
+        if not isinstance(username, str):
+            raise TypeError("username must be a string.")
+
+        cursor = self.conn.cursor()
+        cursor.execute(
+            "INSERT OR REPLACE INTO metadata (key, value) VALUES ('username', ?);",
+            (username,),
+        )
+        self.conn.commit()
+
+    def get_account_username(self) -> str | None:
+        """Retrieve the account username from the encrypted metadata table."""
+        if self.conn is None:
+            raise AccountStoreError("Database is not open.")
+
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT value FROM metadata WHERE key = 'username';")
+        row = cursor.fetchone()
+        return str(row[0]) if row else None
 
     def add_account(self, service: str, username: str, password: str) -> None:
         """Insert account credentials into the encrypted vault."""

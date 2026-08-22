@@ -91,6 +91,30 @@ class AccountStoreTests(unittest.TestCase):
         with self.assertRaises(AccountStoreError):
             store.get_all_accounts()
 
+        with self.assertRaises(AccountStoreError):
+            store.set_account_username("matteo")
+
+        with self.assertRaises(AccountStoreError):
+            store.get_account_username()
+
+    def test_set_and_get_account_username(self) -> None:
+        with TemporaryDirectory() as directory:
+            db_path = Path(directory) / "vault.db"
+            salt = b"\x50" * 16
+            key = derive_master_key("PassWithUsername1!", salt=salt)
+
+            with AccountStore(db_path) as store:
+                store.open(key)
+                self.assertIsNone(store.get_account_username())
+
+                store.set_account_username("matteominati")
+                self.assertEqual(store.get_account_username(), "matteominati")
+
+            with AccountStore(db_path) as store:
+                store.open(key)
+                self.assertEqual(store.get_account_username(), "matteominati")
+
 
 if __name__ == "__main__":
     unittest.main()
+

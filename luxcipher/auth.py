@@ -45,9 +45,23 @@ ARGON2_PARALLELISM = 4
 ARGON2_HASH_LEN = 32
 
 
-def get_or_create_salt(salt_path: str | Path = VAULT_SALT_FILE) -> bytes:
+def default_salt_path() -> Path:
+    """Return standard user data path for the vault salt file."""
+    import os
+    configured_home = os.environ.get("LUXCIPHER_HOME")
+    if configured_home:
+        return Path(configured_home).expanduser() / VAULT_SALT_FILE
+
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    if local_app_data:
+        return Path(local_app_data) / "LuxCipher" / VAULT_SALT_FILE
+
+    return Path.home() / ".luxcipher" / VAULT_SALT_FILE
+
+
+def get_or_create_salt(salt_path: str | Path | None = None) -> bytes:
     """Load an existing 16-byte salt from vault.salt or create and persist a new one."""
-    path = Path(salt_path)
+    path = Path(salt_path) if salt_path is not None else default_salt_path()
     if path.is_file():
         salt = path.read_bytes()
         if len(salt) == SALT_BYTES:
@@ -63,12 +77,13 @@ def get_or_create_salt(salt_path: str | Path = VAULT_SALT_FILE) -> bytes:
 def derive_master_key(
     master_password: str,
     salt: bytes | None = None,
-    salt_path: str | Path = VAULT_SALT_FILE,
+    salt_path: str | Path | None = None,
 ) -> bytes:
     """Derive a 32-byte master key from the master password using Argon2id with OWASP parameters."""
     _require_string("master_password", master_password)
     if salt is None:
         salt = get_or_create_salt(salt_path)
+
 
     if not isinstance(salt, (bytes, bytearray)):
         raise TypeError("salt must be bytes.")

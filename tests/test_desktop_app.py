@@ -150,9 +150,37 @@ class DesktopAppTests(unittest.TestCase):
             app._running = False
             store.close()
 
+    def test_generator_controls_sync_and_strength(self) -> None:
+        mock_page = MagicMock()
+        app = LuxCipherFletApp(page=mock_page, account_store=MagicMock())
+
+        # Test slider change syncs length input and updates pwd
+        app._on_length_slider_change(28)
+        self.assertEqual(app.gen_length, 28)
+        self.assertEqual(app.gen_length_input.value, "28")
+        self.assertEqual(len(app.generated_pwd_value), 28)
+        self.assertEqual(app.gen_strength_label.value, "Molto Forte")
+
+        # Test length input change syncs slider
+        app._on_length_input_change("14")
+        self.assertEqual(app.gen_length, 14)
+        self.assertEqual(app.gen_slider.value, 14.0)
+        self.assertEqual(len(app.generated_pwd_value), 14)
+
+        # Test option toggling
+        app._toggle_gen_opt("symbols", False)
+        self.assertFalse(app.gen_symbols)
+
+        # Test regenerate
+        app._on_regenerate_click()
+        self.assertEqual(len(app.generated_pwd_value), 14)
+
+        app._running = False
+
 
 if __name__ == "__main__":
     unittest.main()
+
 
 
 

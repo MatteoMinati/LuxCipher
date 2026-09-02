@@ -73,6 +73,25 @@ class PasswordGeneratorTests(unittest.TestCase):
 
         self.assertEqual(len(generate_password(options)), MIN_PASSWORD_LENGTH)
 
+    def test_evaluate_password_strength(self) -> None:
+        from luxcipher.password_generator import evaluate_password_strength
+
+        # Empty password
+        score, label, color = evaluate_password_strength("")
+        self.assertEqual(score, 0.0)
+        self.assertEqual(label, "Nessuna")
+
+        # Short / weak password
+        score, label, color = evaluate_password_strength("abc123")
+        self.assertLess(score, 0.4)
+        self.assertEqual(label, "Molto Debole")
+
+        # Strong password (length >= 22 with variety)
+        score, label, color = evaluate_password_strength("V3ry$ecureP@ssw0rd!2026_Lux")
+        self.assertEqual(score, 1.0)
+        self.assertEqual(label, "Molto Forte")
+
 
 if __name__ == "__main__":
     unittest.main()
+

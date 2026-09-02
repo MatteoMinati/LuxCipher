@@ -19,6 +19,7 @@ from luxcipher.password_generator import (
     MAX_PASSWORD_LENGTH,
     MIN_PASSWORD_LENGTH,
     PasswordOptions,
+    evaluate_password_strength,
     generate_password,
 )
 
@@ -119,6 +120,51 @@ class LuxCipherFletApp:
         self.gen_no_ambiguous = False
         self.generated_pwd_value = ""
 
+        # Generator controls
+        self.gen_pwd_text = ft.Text(
+            "",
+            font_family="Consolas",
+            size=14,
+            weight=ft.FontWeight.W_700,
+            color=CYAN_ACCENT,
+            selectable=True,
+        )
+        self.gen_slider = ft.Slider(
+            min=MIN_PASSWORD_LENGTH,
+            max=MAX_PASSWORD_LENGTH,
+            divisions=MAX_PASSWORD_LENGTH - MIN_PASSWORD_LENGTH,
+            value=float(self.gen_length),
+            label="{value}",
+            active_color=PURPLE_PRIMARY,
+        )
+        self.gen_length_input = ft.TextField(
+            value=str(self.gen_length),
+            width=58,
+            height=32,
+            text_size=12,
+            text_align=ft.TextAlign.CENTER,
+            bgcolor=BG_INPUT,
+            border_color=BORDER_COLOR,
+            focused_border_color=BORDER_FOCUS,
+            border_radius=8,
+            color=TEXT_WHITE,
+            content_padding=make_padding(horizontal=4, vertical=4),
+            keyboard_type=ft.KeyboardType.NUMBER,
+        )
+        self.gen_strength_bar = ft.ProgressBar(
+            value=0.85,
+            color=EMERALD_ACCENT,
+            bgcolor="#1A1C30",
+            height=6,
+            border_radius=3,
+        )
+        self.gen_strength_label = ft.Text(
+            "Molto Forte",
+            size=11,
+            weight=ft.FontWeight.W_700,
+            color=EMERALD_ACCENT,
+        )
+
         # References for test/direct access
         self.auth_username_field = ft.TextField()
         self.auth_password_field = ft.TextField()
@@ -186,9 +232,9 @@ class LuxCipherFletApp:
             self.page.window.title_bar_buttons_hidden = True
             self.page.window.frameless = True
             self.page.window.width = 520
-            self.page.window.height = 720
+            self.page.window.height = 760
             self.page.window.min_width = 460
-            self.page.window.min_height = 640
+            self.page.window.min_height = 680
             self.page.window.prevent_close = False
             self.page.window.on_event = self._on_window_event
             if hasattr(self.page, "run_task") and hasattr(self.page.window, "center"):
@@ -644,13 +690,14 @@ class LuxCipherFletApp:
 
         return ft.Container(
             alignment=ft.Alignment(0, 0),
-            padding=make_padding(horizontal=20, vertical=10),
+            padding=make_padding(horizontal=20, vertical=8),
             expand=True,
             content=ft.Container(
                 width=440,
                 content=ft.Column(
                     expand=True,
-                    spacing=10,
+                    spacing=8,
+                    scroll=ft.ScrollMode.AUTO,
                     controls=[
                         user_header,
                         tab_switcher_row,
@@ -996,16 +1043,28 @@ class LuxCipherFletApp:
             self._show_snackbar(f"Errore durante il salvataggio: {error}", is_error=True)
 
     def _build_generator_tab(self) -> ft.Control:
+        if not self.generated_pwd_value:
+            self._generate_pwd()
+
+        score, label, color_hex = evaluate_password_strength(self.generated_pwd_value)
+        self.gen_pwd_text.value = self.generated_pwd_value
+        self.gen_strength_label.value = label
+        self.gen_strength_label.color = color_hex
+        self.gen_strength_bar.value = score
+        self.gen_strength_bar.color = color_hex
+        self.gen_slider.value = float(self.gen_length)
+        self.gen_length_input.value = str(self.gen_length)
+
         pwd_display = ft.Container(
             bgcolor=BG_INPUT,
             border_radius=12,
             border=make_border(BORDER_COLOR),
-            padding=make_padding(horizontal=14, vertical=10),
+            padding=make_padding(horizontal=14, vertical=8),
             content=ft.Row(
                 alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
                 controls=[
-                    ft.Text(self.generated_pwd_value, font_family="Consolas", size=14, weight=ft.FontWeight.W_700, color=CYAN_ACCENT),
+                    self.gen_pwd_text,
                     ft.Container(
                         content=ft.IconButton(
                             icon=ft.Icons.CONTENT_COPY_ROUNDED,
@@ -1021,37 +1080,46 @@ class LuxCipherFletApp:
             ),
         )
 
-        slider_len = ft.Slider(
-            min=MIN_PASSWORD_LENGTH,
-            max=MAX_PASSWORD_LENGTH,
-            divisions=MAX_PASSWORD_LENGTH - MIN_PASSWORD_LENGTH,
-            value=float(self.gen_length),
-            label="{value}",
-            active_color=PURPLE_PRIMARY,
-            on_change=lambda e: self._on_length_change(int(e.control.value)),
-        )
-
-        options_card = ft.Container(
+        strength_card = ft.Container(
             bgcolor=BG_CARD,
-            border_radius=14,
+            border_radius=12,
             border=make_border(BORDER_COLOR),
-            padding=14,
+            padding=make_padding(horizontal=14, vertical=8),
             content=ft.Column(
                 spacing=4,
                 controls=[
                     ft.Row(
                         alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                         controls=[
-                            ft.Text("Lunghezza", weight=ft.FontWeight.W_600, size=12, color=TEXT_WHITE),
-                            ft.Container(
-                                content=ft.Text(f"{self.gen_length} caratteri", color=PURPLE_HOVER, weight=ft.FontWeight.W_700, size=11),
-                                bgcolor="#201E38",
-                                border_radius=8,
-                                padding=make_padding(horizontal=8, vertical=2),
-                            ),
+                            ft.Text("Sicurezza Password", size=11, weight=ft.FontWeight.W_600, color=TEXT_MUTED),
+                            self.gen_strength_label,
                         ],
                     ),
-                    slider_len,
+                    self.gen_strength_bar,
+                ],
+            ),
+        )
+
+        self.gen_slider.on_change = lambda e: self._on_length_slider_change(int(e.control.value))
+        self.gen_length_input.on_change = lambda e: self._on_length_input_change(e.control.value)
+
+        options_card = ft.Container(
+            bgcolor=BG_CARD,
+            border_radius=14,
+            border=make_border(BORDER_COLOR),
+            padding=12,
+            content=ft.Column(
+                spacing=2,
+                controls=[
+                    ft.Row(
+                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                        controls=[
+                            ft.Text("Lunghezza caratteri", weight=ft.FontWeight.W_600, size=12, color=TEXT_WHITE),
+                            self.gen_length_input,
+                        ],
+                    ),
+                    self.gen_slider,
                     ft.Divider(height=1, color=BORDER_COLOR),
                     ft.Checkbox(label="Minuscole (a-z)", value=self.gen_lowercase, on_change=lambda e: self._toggle_gen_opt("lower", e.control.value)),
                     ft.Checkbox(label="Maiuscole (A-Z)", value=self.gen_uppercase, on_change=lambda e: self._toggle_gen_opt("upper", e.control.value)),
@@ -1065,7 +1133,7 @@ class LuxCipherFletApp:
         btn_gen = ft.Container(
             content=ft.Row(
                 [
-                    ft.Icon(ft.Icons.AUTO_FIX_HIGH_ROUNDED, size=16, color=TEXT_WHITE),
+                    ft.Icon(ft.Icons.AUTO_FIX_HIGH_ROUNDED, size=15, color=TEXT_WHITE),
                     ft.Text("Rigenera Nuova Password", color=TEXT_WHITE, weight=ft.FontWeight.W_600, size=13),
                 ],
                 alignment=ft.MainAxisAlignment.CENTER,
@@ -1073,29 +1141,69 @@ class LuxCipherFletApp:
             ),
             bgcolor=PURPLE_PRIMARY,
             border_radius=12,
-            height=42,
+            height=40,
             alignment=ft.Alignment(0, 0),
-            on_click=lambda _: self._generate_pwd(update_ui=True),
+            on_click=lambda _: self._on_regenerate_click(),
             ink=True,
         )
 
         return ft.Container(
             expand=True,
             content=ft.Column(
-                spacing=10,
+                spacing=8,
                 horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
                 controls=[
                     pwd_display,
+                    strength_card,
                     options_card,
                     btn_gen,
                 ],
             ),
         )
 
-    def _on_length_change(self, val: int) -> None:
+    def _update_generator_ui(self) -> None:
+        """Update password display, strength indicator, and controls in-place without rebuilding."""
+        self._generate_pwd()
+        score, label, color_hex = evaluate_password_strength(self.generated_pwd_value)
+        self.gen_pwd_text.value = self.generated_pwd_value
+        self.gen_strength_label.value = label
+        self.gen_strength_label.color = color_hex
+        self.gen_strength_bar.value = score
+        self.gen_strength_bar.color = color_hex
+        try:
+            self.gen_pwd_text.update()
+            self.gen_strength_label.update()
+            self.gen_strength_bar.update()
+        except Exception:
+            pass
+
+    def _on_length_slider_change(self, val: int) -> None:
         self.record_activity()
-        self.gen_length = val
-        self._generate_pwd(update_ui=True)
+        self.gen_length = max(MIN_PASSWORD_LENGTH, min(MAX_PASSWORD_LENGTH, val))
+        self.gen_length_input.value = str(self.gen_length)
+        try:
+            self.gen_length_input.update()
+        except Exception:
+            pass
+        self._update_generator_ui()
+
+    def _on_length_input_change(self, val_str: str) -> None:
+        self.record_activity()
+        clean = "".join(c for c in val_str if c.isdigit())
+        if clean:
+            val = int(clean)
+            if MIN_PASSWORD_LENGTH <= val <= MAX_PASSWORD_LENGTH:
+                self.gen_length = val
+                self.gen_slider.value = float(val)
+                try:
+                    self.gen_slider.update()
+                except Exception:
+                    pass
+                self._update_generator_ui()
+
+    def _on_regenerate_click(self) -> None:
+        self.record_activity()
+        self._update_generator_ui()
 
     def _toggle_gen_opt(self, opt_name: str, val: bool) -> None:
         self.record_activity()
@@ -1104,7 +1212,7 @@ class LuxCipherFletApp:
         elif opt_name == "digits": self.gen_digits = val
         elif opt_name == "symbols": self.gen_symbols = val
         elif opt_name == "ambiguous": self.gen_no_ambiguous = val
-        self._generate_pwd(update_ui=True)
+        self._update_generator_ui()
 
     def _generate_pwd(self, update_ui: bool = False) -> None:
         self.record_activity()
@@ -1122,7 +1230,7 @@ class LuxCipherFletApp:
             self.generated_pwd_value = ""
 
         if update_ui:
-            self.render()
+            self._update_generator_ui()
 
     def _lock_vault(self) -> None:
         self.account_store.close()

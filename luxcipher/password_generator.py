@@ -85,3 +85,33 @@ def _enabled_pools(options: PasswordOptions) -> list[str]:
             pools.append(characters)
 
     return pools
+
+
+def evaluate_password_strength(password: str) -> tuple[float, str, str]:
+    """Calculate password strength score (0.0 to 1.0), description label, and color hex."""
+    if not password:
+        return (0.0, "Nessuna", "#71717A")
+
+    length = len(password)
+    has_lower = any(c.islower() for c in password)
+    has_upper = any(c.isupper() for c in password)
+    has_digit = any(c.isdigit() for c in password)
+    has_symbol = any(c in SYMBOLS for c in password)
+
+    variety_count = sum([has_lower, has_upper, has_digit, has_symbol])
+
+    if length < 12:
+        return (0.25, "Molto Debole", "#EF4444")
+    elif length < 16:
+        if variety_count >= 3:
+            return (0.50, "Media", "#F59E0B")
+        return (0.35, "Debole", "#EF4444")
+    elif length < 22:
+        if variety_count >= 3:
+            return (0.80, "Forte", "#06B6D4")
+        return (0.60, "Media", "#F59E0B")
+    else:  # length >= 22
+        if variety_count >= 3:
+            return (1.0, "Molto Forte", "#10B981")
+        return (0.85, "Forte", "#06B6D4")
+

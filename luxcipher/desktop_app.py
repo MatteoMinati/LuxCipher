@@ -20,22 +20,22 @@ from luxcipher.password_generator import (
     generate_password,
 )
 
-# Colors
-BG_ROOT = "#0F101A"
-BG_CARD = "#171927"
-BG_INPUT = "#1F2236"
-BORDER_COLOR = "#2C314E"
+# Colors - Clean Minimal Dark Palette
+BG_ROOT = "#0C0D15"
+BG_CARD = "#131524"
+BG_INPUT = "#181A2D"
+BORDER_COLOR = "#22253E"
 BORDER_FOCUS = "#7C3AED"
 
-PURPLE_PRIMARY = "#7C3AED"       # Vibrant Electric Violet / Purple
+PURPLE_PRIMARY = "#7C3AED"       # Vibrant Electric Violet
 PURPLE_HOVER = "#8B5CF6"
-CYAN_ACCENT = "#06B6D4"
-EMERALD_ACCENT = "#10B981"
-ROSE_DANGER = "#F43F5E"
-TEXT_WHITE = "#FFFFFF"
-TEXT_MUTED = "#9095AC"
-TEXT_SUBTLE = "#646A85"
-BTN_DARK = "#262A42"
+CYAN_ACCENT = "#38BDF8"          # Modern Sky / Cyan
+EMERALD_ACCENT = "#34D399"       # Mint / Emerald
+ROSE_DANGER = "#F43F5E"          # Rose Red
+TEXT_WHITE = "#F8FAFC"
+TEXT_MUTED = "#94A3B8"
+TEXT_SUBTLE = "#64748B"
+BTN_DARK = "#1E2138"
 
 
 def make_padding(horizontal: int = 0, vertical: int = 0) -> ft.Padding:
@@ -133,10 +133,10 @@ class LuxCipherFletApp:
             self.page.window.title_bar_hidden = True
             self.page.window.title_bar_buttons_hidden = True
             self.page.window.frameless = True
-            self.page.window.width = 540
-            self.page.window.height = 700
-            self.page.window.min_width = 480
-            self.page.window.min_height = 620
+            self.page.window.width = 520
+            self.page.window.height = 720
+            self.page.window.min_width = 460
+            self.page.window.min_height = 640
             self.page.window.prevent_close = False
             self.page.window.on_event = self._on_window_event
             if hasattr(self.page, "run_task") and hasattr(self.page.window, "center"):
@@ -152,8 +152,9 @@ class LuxCipherFletApp:
 
     def _build_custom_title_bar(self) -> ft.Control:
         return ft.Container(
-            bgcolor="#121422",
+            bgcolor="#0E101B",
             padding=make_padding(horizontal=16, vertical=8),
+            border=ft.Border(bottom=ft.BorderSide(1, "#1A1C2C")),
             content=ft.Row(
                 alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
@@ -163,13 +164,13 @@ class LuxCipherFletApp:
                         content=ft.Row(
                             spacing=8,
                             controls=[
-                                ft.Icon(ft.Icons.LOCK_ROUNDED, color="#A78BFA", size=18),
-                                ft.Text("LuxCipher", weight=ft.FontWeight.BOLD, size=13, color=TEXT_WHITE),
+                                ft.Icon(ft.Icons.LOCK_ROUNDED, color=PURPLE_HOVER, size=16),
+                                ft.Text("LuxCipher", weight=ft.FontWeight.W_700, size=13, color=TEXT_WHITE),
                             ],
                         ),
                     ),
                     ft.Row(
-                        spacing=2,
+                        spacing=0,
                         controls=[
                             ft.IconButton(
                                 icon=ft.Icons.REMOVE_ROUNDED,
@@ -255,109 +256,132 @@ class LuxCipherFletApp:
         except Exception:
             pass
 
-    # --- AUTH SCREENS (CENTERED) ---
+    # --- AUTH VIEW (CLEAN & CENTERED) ---
     def _build_auth_view(self) -> ft.Control:
         is_login = self.auth_mode == "login"
 
-        # Segmented switcher [ Accedi | Registrati ] centered
         btn_accedi = ft.Container(
-            content=ft.Text("Accedi", color=TEXT_WHITE if is_login else TEXT_MUTED, weight=ft.FontWeight.BOLD, size=13),
+            content=ft.Text("Accedi", color=TEXT_WHITE if is_login else TEXT_MUTED, weight=ft.FontWeight.W_700, size=12),
             bgcolor=PURPLE_PRIMARY if is_login else ft.Colors.TRANSPARENT,
-            border_radius=20,
-            padding=make_padding(horizontal=28, vertical=8),
+            border_radius=18,
+            padding=make_padding(horizontal=24, vertical=7),
             on_click=lambda _: self._set_auth_mode("login"),
             ink=True,
         )
         btn_registrati = ft.Container(
-            content=ft.Text("Registrati", color=TEXT_WHITE if not is_login else TEXT_MUTED, weight=ft.FontWeight.BOLD, size=13),
+            content=ft.Text("Registrati", color=TEXT_WHITE if not is_login else TEXT_MUTED, weight=ft.FontWeight.W_700, size=12),
             bgcolor=PURPLE_PRIMARY if not is_login else ft.Colors.TRANSPARENT,
-            border_radius=20,
-            padding=make_padding(horizontal=28, vertical=8),
+            border_radius=18,
+            padding=make_padding(horizontal=24, vertical=7),
             on_click=lambda _: self._set_auth_mode("setup"),
             ink=True,
         )
 
         switcher_pill = ft.Container(
-            bgcolor="#1B1D2E",
-            border_radius=22,
+            bgcolor="#17192A",
+            border_radius=20,
+            border=make_border("#22253C"),
             padding=3,
             content=ft.Row([btn_accedi, btn_registrati], tight=True),
         )
 
         switcher_row = ft.Row([switcher_pill], alignment=ft.MainAxisAlignment.CENTER)
 
-        # Form fields
+        # Form fields with identical geometry and border radius
         self.auth_username_field = ft.TextField(
-            hint_text="il tuo nome utente",
+            hint_text="Nome utente",
+            hint_style=ft.TextStyle(color=TEXT_SUBTLE, size=13),
+            text_align=ft.TextAlign.LEFT,
             bgcolor=BG_INPUT,
             border_color=BORDER_COLOR,
-            focused_border_color=PURPLE_PRIMARY,
+            focused_border_color=BORDER_FOCUS,
             border_radius=12,
             color=TEXT_WHITE,
-            text_size=14,
+            text_size=13,
+            content_padding=make_padding(horizontal=14, vertical=12),
+            height=44,
             autofocus=True,
         )
 
         self.auth_password_field = ft.TextField(
-            hint_text="master password",
+            hint_text="Master password",
+            hint_style=ft.TextStyle(color=TEXT_SUBTLE, size=13),
+            text_align=ft.TextAlign.LEFT,
             password=True,
             can_reveal_password=True,
             bgcolor=BG_INPUT,
             border_color=BORDER_COLOR,
-            focused_border_color=PURPLE_PRIMARY,
+            focused_border_color=BORDER_FOCUS,
             border_radius=12,
             color=TEXT_WHITE,
-            text_size=14,
+            text_size=13,
+            content_padding=make_padding(horizontal=14, vertical=12),
+            height=44,
             on_submit=lambda _: self._submit_auth(),
         )
 
         self.auth_confirm_field = ft.TextField(
-            hint_text="conferma master password",
+            hint_text="Conferma master password",
+            hint_style=ft.TextStyle(color=TEXT_SUBTLE, size=13),
+            text_align=ft.TextAlign.LEFT,
             password=True,
             can_reveal_password=True,
             bgcolor=BG_INPUT,
             border_color=BORDER_COLOR,
-            focused_border_color=PURPLE_PRIMARY,
+            focused_border_color=BORDER_FOCUS,
             border_radius=12,
             color=TEXT_WHITE,
-            text_size=14,
+            text_size=13,
+            content_padding=make_padding(horizontal=14, vertical=12),
+            height=44,
             on_submit=lambda _: self._submit_auth(),
         )
 
-        form_controls: list[ft.Control] = [
-            ft.Row([ft.Text("NOME UTENTE", size=9, weight=ft.FontWeight.BOLD, color=TEXT_MUTED)], alignment=ft.MainAxisAlignment.START),
-            self.auth_username_field,
-            ft.Container(height=6),
-            ft.Row([ft.Text("MASTER PASSWORD", size=9, weight=ft.FontWeight.BOLD, color=TEXT_MUTED)], alignment=ft.MainAxisAlignment.START),
-            self.auth_password_field,
-        ]
-
-        if not is_login:
-            form_controls.extend([
-                ft.Container(height=6),
-                ft.Row([ft.Text("CONFERMA PASSWORD", size=9, weight=ft.FontWeight.BOLD, color=TEXT_MUTED)], alignment=ft.MainAxisAlignment.START),
-                self.auth_confirm_field,
-            ])
-
         action_btn = ft.Container(
-            content=ft.Text("Accedi" if is_login else "Crea account", color=TEXT_WHITE, weight=ft.FontWeight.BOLD, size=15),
+            content=ft.Text("Accedi" if is_login else "Crea account", color=TEXT_WHITE, weight=ft.FontWeight.W_700, size=14),
             bgcolor=PURPLE_PRIMARY,
-            border_radius=24,
-            padding=make_padding(vertical=14),
+            border_radius=12,
+            height=44,
             alignment=ft.Alignment(0, 0),
             on_click=lambda _: self._submit_auth(),
             ink=True,
         )
 
+        form_items: list[ft.Control] = [
+            ft.Text("NOME UTENTE", size=10, weight=ft.FontWeight.W_700, color=TEXT_MUTED),
+            self.auth_username_field,
+            ft.Container(height=4),
+            ft.Text("MASTER PASSWORD", size=10, weight=ft.FontWeight.W_700, color=TEXT_MUTED),
+            self.auth_password_field,
+        ]
+
+        if not is_login:
+            form_items.extend([
+                ft.Container(height=4),
+                ft.Text("CONFERMA PASSWORD", size=10, weight=ft.FontWeight.W_700, color=TEXT_MUTED),
+                self.auth_confirm_field,
+            ])
+
+        form_items.extend([
+            ft.Container(height=10),
+            action_btn,
+        ])
+
+        form_column = ft.Column(
+            controls=form_items,
+            spacing=4,
+            horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+        )
+
         bottom_link = ft.Row(
             alignment=ft.MainAxisAlignment.CENTER,
             controls=[
-                ft.Text("Non hai un account? " if is_login else "Hai già un account? ", color=TEXT_MUTED, size=13),
+                ft.Text("Non hai un account? " if is_login else "Hai già un account? ", color=TEXT_MUTED, size=12),
                 ft.Text(
                     "Crea un account" if is_login else "Accedi",
                     color=PURPLE_HOVER,
-                    weight=ft.FontWeight.BOLD,
-                    size=13,
+                    weight=ft.FontWeight.W_700,
+                    size=12,
                 ),
             ],
         )
@@ -367,36 +391,33 @@ class LuxCipherFletApp:
             on_tap=lambda _: self._set_auth_mode("setup" if is_login else "login"),
         )
 
-        # Centered layout
         return ft.Container(
             alignment=ft.Alignment(0, 0),
             expand=True,
             padding=make_padding(horizontal=24, vertical=16),
             content=ft.Container(
-                width=420,
+                width=380,
                 content=ft.Column(
                     horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                    spacing=10,
+                    spacing=8,
                     controls=[
                         switcher_row,
-                        ft.Container(height=8),
+                        ft.Container(height=6),
                         ft.Text(
                             "Bentornato." if is_login else "Crea account.",
-                            size=28,
-                            weight=ft.FontWeight.BOLD,
+                            size=26,
+                            weight=ft.FontWeight.W_700,
                             color=TEXT_WHITE,
                             text_align=ft.TextAlign.CENTER,
                         ),
                         ft.Text(
                             "Accedi per gestire le tue credenziali cifrate." if is_login else "Inizia a proteggere le tue password in locale.",
-                            size=13,
+                            size=12,
                             color=TEXT_MUTED,
                             text_align=ft.TextAlign.CENTER,
                         ),
-                        ft.Container(height=12),
-                        ft.Column(controls=form_controls, spacing=4),
-                        ft.Container(height=14),
-                        action_btn,
+                        ft.Container(height=10),
+                        form_column,
                         ft.Container(height=8),
                         bottom_link_container,
                     ],
@@ -459,87 +480,128 @@ class LuxCipherFletApp:
             self.current_username = username
             self.render()
 
-    # --- VAULT UNLOCKED SCREEN ---
+    # --- VAULT UNLOCKED VIEW (CLEAN, MINIMAL & CENTERED) ---
     def _build_vault_view(self) -> ft.Control:
-        user_header = ft.Row(
-            alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-            vertical_alignment=ft.CrossAxisAlignment.CENTER,
-            controls=[
-                ft.Row(
-                    spacing=10,
-                    controls=[
-                        ft.Container(
-                            content=ft.Icon(ft.Icons.PERSON_ROUNDED, color=TEXT_WHITE, size=20),
-                            bgcolor="#282D46",
-                            border_radius=20,
-                            padding=8,
-                        ),
-                        ft.Column(
-                            spacing=2,
-                            alignment=ft.MainAxisAlignment.CENTER,
-                            controls=[
-                                ft.Text(self.current_username or "Utente", weight=ft.FontWeight.BOLD, size=15, color=TEXT_WHITE),
-                                ft.Container(
-                                    content=ft.Text("🔒 Vault Cifrato Attivo", size=9, weight=ft.FontWeight.BOLD, color=CYAN_ACCENT),
-                                    bgcolor="#142B38",
-                                    border_radius=10,
-                                    padding=make_padding(horizontal=8, vertical=2),
-                                ),
+        user_header = ft.Container(
+            padding=make_padding(vertical=4),
+            content=ft.Row(
+                alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                controls=[
+                    ft.Row(
+                        spacing=10,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                        controls=[
+                            ft.Container(
+                                content=ft.Icon(ft.Icons.PERSON_ROUNDED, color=TEXT_WHITE, size=18),
+                                bgcolor="#22253A",
+                                border_radius=18,
+                                width=36,
+                                height=36,
+                                alignment=ft.Alignment(0, 0),
+                            ),
+                            ft.Column(
+                                spacing=1,
+                                alignment=ft.MainAxisAlignment.CENTER,
+                                controls=[
+                                    ft.Text(self.current_username or "Utente", weight=ft.FontWeight.W_700, size=14, color=TEXT_WHITE),
+                                    ft.Row(
+                                        spacing=4,
+                                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                                        controls=[
+                                            ft.Container(width=6, height=6, border_radius=3, bgcolor=EMERALD_ACCENT),
+                                            ft.Text("Vault Cifrato", size=10, weight=ft.FontWeight.W_600, color=CYAN_ACCENT),
+                                        ],
+                                    ),
+                                ],
+                            ),
+                        ],
+                    ),
+                    ft.Container(
+                        content=ft.Row(
+                            [
+                                ft.Icon(ft.Icons.LOGOUT_ROUNDED, color="#FDA4AF", size=13),
+                                ft.Text("Esci", color="#FDA4AF", size=11, weight=ft.FontWeight.W_600),
                             ],
+                            spacing=4,
+                            tight=True,
                         ),
-                    ],
-                ),
-                ft.Container(
-                    content=ft.Row([ft.Icon(ft.Icons.LOGOUT_ROUNDED, color=TEXT_WHITE, size=14), ft.Text("Disconnetti", color=TEXT_WHITE, size=12, weight=ft.FontWeight.BOLD)], tight=True),
-                    bgcolor=ROSE_DANGER,
-                    border_radius=16,
-                    padding=make_padding(horizontal=12, vertical=6),
-                    on_click=lambda _: self._lock_vault(),
-                    ink=True,
-                ),
-            ],
+                        bgcolor="#2A1520",
+                        border=ft.Border(
+                            top=ft.BorderSide(1, "#4C1D2A"),
+                            right=ft.BorderSide(1, "#4C1D2A"),
+                            bottom=ft.BorderSide(1, "#4C1D2A"),
+                            left=ft.BorderSide(1, "#4C1D2A"),
+                        ),
+                        border_radius=14,
+                        padding=make_padding(horizontal=10, vertical=5),
+                        on_click=lambda _: self._lock_vault(),
+                        ink=True,
+                    ),
+                ],
+            ),
         )
 
-        # Tab Segmented Switcher for Vault View
+        # Centered Tab Segmented Switcher
         is_vault_tab = self.active_tab == "vault"
         tab_btn_vault = ft.Container(
-            content=ft.Row([ft.Icon(ft.Icons.STORAGE_ROUNDED, size=14, color=TEXT_WHITE if is_vault_tab else TEXT_MUTED), ft.Text("Credenziali Vault", color=TEXT_WHITE if is_vault_tab else TEXT_MUTED, weight=ft.FontWeight.BOLD, size=12)], tight=True),
+            content=ft.Row(
+                [
+                    ft.Icon(ft.Icons.STORAGE_ROUNDED, size=13, color=TEXT_WHITE if is_vault_tab else TEXT_MUTED),
+                    ft.Text("Credenziali", color=TEXT_WHITE if is_vault_tab else TEXT_MUTED, weight=ft.FontWeight.W_600, size=12),
+                ],
+                spacing=6,
+                tight=True,
+            ),
             bgcolor=PURPLE_PRIMARY if is_vault_tab else ft.Colors.TRANSPARENT,
-            border_radius=18,
-            padding=make_padding(horizontal=16, vertical=8),
+            border_radius=16,
+            padding=make_padding(horizontal=16, vertical=7),
             on_click=lambda _: self._set_active_tab("vault"),
             ink=True,
         )
         tab_btn_gen = ft.Container(
-            content=ft.Row([ft.Icon(ft.Icons.BOLT_ROUNDED, size=14, color=TEXT_WHITE if not is_vault_tab else TEXT_MUTED), ft.Text("Generatore Password", color=TEXT_WHITE if not is_vault_tab else TEXT_MUTED, weight=ft.FontWeight.BOLD, size=12)], tight=True),
+            content=ft.Row(
+                [
+                    ft.Icon(ft.Icons.KEY_ROUNDED, size=13, color=TEXT_WHITE if not is_vault_tab else TEXT_MUTED),
+                    ft.Text("Generatore", color=TEXT_WHITE if not is_vault_tab else TEXT_MUTED, weight=ft.FontWeight.W_600, size=12),
+                ],
+                spacing=6,
+                tight=True,
+            ),
             bgcolor=PURPLE_PRIMARY if not is_vault_tab else ft.Colors.TRANSPARENT,
-            border_radius=18,
-            padding=make_padding(horizontal=16, vertical=8),
+            border_radius=16,
+            padding=make_padding(horizontal=16, vertical=7),
             on_click=lambda _: self._set_active_tab("generator"),
             ink=True,
         )
 
         tab_switcher = ft.Container(
-            bgcolor="#1B1D2E",
-            border_radius=20,
+            bgcolor="#17192A",
+            border_radius=18,
+            border=make_border("#22253C"),
             padding=3,
             content=ft.Row([tab_btn_vault, tab_btn_gen], tight=True),
         )
+        tab_switcher_row = ft.Row([tab_switcher], alignment=ft.MainAxisAlignment.CENTER)
 
         content_body = self._build_credentials_tab() if is_vault_tab else self._build_generator_tab()
 
         return ft.Container(
-            padding=make_padding(horizontal=24, vertical=14),
+            alignment=ft.Alignment(0, 0),
+            padding=make_padding(horizontal=20, vertical=10),
             expand=True,
-            content=ft.Column(
-                expand=True,
-                spacing=12,
-                controls=[
-                    user_header,
-                    tab_switcher,
-                    ft.Divider(height=1, color=BORDER_COLOR),
-                    content_body,
-                ],
+            content=ft.Container(
+                width=440,
+                content=ft.Column(
+                    expand=True,
+                    spacing=10,
+                    controls=[
+                        user_header,
+                        tab_switcher_row,
+                        ft.Divider(height=1, color="#1E2033"),
+                        content_body,
+                    ],
+                ),
             ),
         )
 
@@ -552,17 +614,80 @@ class LuxCipherFletApp:
         if self.account_store.is_open():
             accounts = self.account_store.get_all_accounts()
 
-        # Form fields for adding new account
-        self.new_service_field = ft.TextField(hint_text="Servizio (es. Google, GitHub)", bgcolor=BG_INPUT, border_color=BORDER_COLOR, border_radius=10, text_size=12, color=TEXT_WHITE)
-        self.new_user_field = ft.TextField(hint_text="Username o Email", bgcolor=BG_INPUT, border_color=BORDER_COLOR, border_radius=10, text_size=12, color=TEXT_WHITE)
-        self.new_pwd_field = ft.TextField(hint_text="Password", password=True, can_reveal_password=True, bgcolor=BG_INPUT, border_color=BORDER_COLOR, border_radius=10, text_size=12, color=TEXT_WHITE, expand=True)
+        # Clean form fields
+        self.new_service_field = ft.TextField(
+            hint_text="Servizio (es. Google, GitHub)",
+            hint_style=ft.TextStyle(color=TEXT_SUBTLE, size=12),
+            bgcolor=BG_INPUT,
+            border_color=BORDER_COLOR,
+            focused_border_color=BORDER_FOCUS,
+            border_radius=10,
+            text_size=13,
+            color=TEXT_WHITE,
+            content_padding=make_padding(horizontal=12, vertical=10),
+            height=40,
+        )
+        self.new_user_field = ft.TextField(
+            hint_text="Username o Email",
+            hint_style=ft.TextStyle(color=TEXT_SUBTLE, size=12),
+            bgcolor=BG_INPUT,
+            border_color=BORDER_COLOR,
+            focused_border_color=BORDER_FOCUS,
+            border_radius=10,
+            text_size=13,
+            color=TEXT_WHITE,
+            content_padding=make_padding(horizontal=12, vertical=10),
+            height=40,
+        )
+        self.new_pwd_field = ft.TextField(
+            hint_text="Password",
+            hint_style=ft.TextStyle(color=TEXT_SUBTLE, size=12),
+            password=True,
+            can_reveal_password=True,
+            bgcolor=BG_INPUT,
+            border_color=BORDER_COLOR,
+            focused_border_color=BORDER_FOCUS,
+            border_radius=10,
+            text_size=13,
+            color=TEXT_WHITE,
+            expand=True,
+            content_padding=make_padding(horizontal=12, vertical=10),
+            height=40,
+        )
 
         btn_fill_pwd = ft.Container(
-            content=ft.Row([ft.Icon(ft.Icons.BOLT_ROUNDED, size=14, color=CYAN_ACCENT), ft.Text("Generata", size=11, color=TEXT_WHITE, weight=ft.FontWeight.BOLD)], tight=True),
+            content=ft.Row(
+                [
+                    ft.Icon(ft.Icons.AUTO_FIX_HIGH_ROUNDED, size=14, color=CYAN_ACCENT),
+                    ft.Text("Genera", size=11, color=TEXT_WHITE, weight=ft.FontWeight.W_600),
+                ],
+                spacing=4,
+                tight=True,
+            ),
             bgcolor=BTN_DARK,
+            border=make_border(BORDER_COLOR),
             border_radius=10,
-            padding=make_padding(horizontal=10, vertical=8),
+            padding=make_padding(horizontal=10, vertical=0),
+            height=40,
+            alignment=ft.Alignment(0, 0),
             on_click=lambda _: self._fill_generated_password(),
+            ink=True,
+        )
+
+        save_btn = ft.Container(
+            content=ft.Row(
+                [
+                    ft.Icon(ft.Icons.LOCK_ROUNDED, size=15, color=TEXT_WHITE),
+                    ft.Text("Salva Credenziale nel Vault", color=TEXT_WHITE, weight=ft.FontWeight.W_600, size=13),
+                ],
+                alignment=ft.MainAxisAlignment.CENTER,
+                spacing=8,
+            ),
+            bgcolor=PURPLE_PRIMARY,
+            border_radius=10,
+            height=40,
+            alignment=ft.Alignment(0, 0),
+            on_click=lambda _: self._add_account_entry(),
             ink=True,
         )
 
@@ -574,18 +699,17 @@ class LuxCipherFletApp:
             content=ft.Column(
                 spacing=8,
                 controls=[
-                    ft.Text("➕ NUOVA CREDENZIALE", size=10, weight=ft.FontWeight.BOLD, color=CYAN_ACCENT),
+                    ft.Row(
+                        [
+                            ft.Icon(ft.Icons.ADD_CIRCLE_OUTLINE_ROUNDED, size=14, color=CYAN_ACCENT),
+                            ft.Text("NUOVA CREDENZIALE", size=10, weight=ft.FontWeight.W_700, color=CYAN_ACCENT),
+                        ],
+                        spacing=6,
+                    ),
                     self.new_service_field,
                     self.new_user_field,
                     ft.Row([self.new_pwd_field, btn_fill_pwd], spacing=6),
-                    ft.Container(
-                        content=ft.Row([ft.Icon(ft.Icons.SAVE_ROUNDED, size=16, color=TEXT_WHITE), ft.Text("Salva nel Vault Cifrato", color=TEXT_WHITE, weight=ft.FontWeight.BOLD, size=13)], alignment=ft.MainAxisAlignment.CENTER, tight=True),
-                        bgcolor=PURPLE_PRIMARY,
-                        border_radius=12,
-                        padding=make_padding(vertical=10),
-                        on_click=lambda _: self._add_account_entry(),
-                        ink=True,
-                    ),
+                    save_btn,
                 ],
             ),
         )
@@ -594,7 +718,7 @@ class LuxCipherFletApp:
         account_cards: list[ft.Control] = []
         for acc in accounts:
             acc_id, srv, uname, pwd = acc[0], acc[1], acc[2], acc[3]
-            display_pwd = pwd if self.show_passwords_in_table else ("•" * min(len(pwd), 12))
+            display_pwd = pwd if self.show_passwords_in_table else ("•" * min(len(pwd), 10))
 
             card = ft.Container(
                 bgcolor=BG_CARD,
@@ -608,16 +732,21 @@ class LuxCipherFletApp:
                         ft.Column(
                             spacing=2,
                             controls=[
-                                ft.Text(srv, weight=ft.FontWeight.BOLD, size=14, color=TEXT_WHITE),
-                                ft.Text(uname, size=12, color=TEXT_MUTED),
+                                ft.Text(srv, weight=ft.FontWeight.W_700, size=13, color=TEXT_WHITE),
+                                ft.Text(uname, size=11, color=TEXT_MUTED),
                                 ft.Text(display_pwd, size=12, color=CYAN_ACCENT, font_family="Consolas"),
                             ],
                         ),
-                        ft.IconButton(
-                            icon=ft.Icons.COPY_ROUNDED,
-                            icon_color=EMERALD_ACCENT,
-                            tooltip="Copia Password",
-                            on_click=lambda _, p=pwd: self._copy_to_clipboard(p),
+                        ft.Container(
+                            content=ft.IconButton(
+                                icon=ft.Icons.CONTENT_COPY_ROUNDED,
+                                icon_color=EMERALD_ACCENT,
+                                icon_size=16,
+                                tooltip="Copia Password",
+                                on_click=lambda _, p=pwd: self._copy_to_clipboard(p),
+                            ),
+                            bgcolor="#192C26",
+                            border_radius=10,
                         ),
                     ],
                 ),
@@ -628,23 +757,34 @@ class LuxCipherFletApp:
             controls=account_cards if account_cards else [
                 ft.Container(
                     alignment=ft.Alignment(0, 0),
-                    padding=20,
-                    content=ft.Text("Nessuna credenziale salvata nel Vault", color=TEXT_MUTED, italic=True),
+                    padding=make_padding(vertical=24),
+                    content=ft.Column(
+                        alignment=ft.MainAxisAlignment.CENTER,
+                        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                        spacing=6,
+                        controls=[
+                            ft.Icon(ft.Icons.SHIELD_OUTLINED, size=28, color=TEXT_SUBTLE),
+                            ft.Text("Nessuna credenziale salvata", color=TEXT_MUTED, size=12),
+                            ft.Text("Aggiungi la prima credenziale dal form qui sopra", color=TEXT_SUBTLE, size=10),
+                        ],
+                    ),
                 )
             ],
-            spacing=8,
+            spacing=6,
             expand=True,
         )
 
         toggle_btn = ft.Container(
             content=ft.Row(
                 [
-                    ft.Icon(ft.Icons.VISIBILITY_OFF if self.show_passwords_in_table else ft.Icons.VISIBILITY, size=14, color=TEXT_MUTED),
-                    ft.Text("Nascondi Password" if self.show_passwords_in_table else "Mostra Password in elenco", size=11, color=TEXT_MUTED),
+                    ft.Icon(ft.Icons.VISIBILITY_OFF if self.show_passwords_in_table else ft.Icons.VISIBILITY, size=13, color=TEXT_MUTED),
+                    ft.Text("Nascondi" if self.show_passwords_in_table else "Mostra in chiaro", size=11, color=TEXT_MUTED),
                 ],
+                spacing=4,
                 tight=True,
             ),
             on_click=lambda _: self._toggle_table_passwords(),
+            ink=True,
         )
 
         return ft.Container(
@@ -657,7 +797,7 @@ class LuxCipherFletApp:
                     ft.Row(
                         alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                         controls=[
-                            ft.Text(f"{len(accounts)} Credenziali Salvate", weight=ft.FontWeight.BOLD, size=11, color=TEXT_MUTED),
+                            ft.Text(f"{len(accounts)} Credenziali Salvate", weight=ft.FontWeight.W_700, size=11, color=TEXT_MUTED),
                             toggle_btn,
                         ],
                     ),
@@ -671,9 +811,7 @@ class LuxCipherFletApp:
         self.render()
 
     def _copy_to_clipboard(self, text: str) -> None:
-        # 1. Native Win32 copy (instant, 0 overhead, 0 external processes)
         set_system_clipboard(text)
-        # 2. Also notify Flet clipboard if available
         try:
             self.page.clipboard.set(text)
         except Exception:
@@ -714,16 +852,22 @@ class LuxCipherFletApp:
             bgcolor=BG_INPUT,
             border_radius=12,
             border=make_border(BORDER_COLOR),
-            padding=14,
+            padding=make_padding(horizontal=14, vertical=10),
             content=ft.Row(
                 alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
                 controls=[
-                    ft.Text(self.generated_pwd_value, font_family="Consolas", size=15, weight=ft.FontWeight.BOLD, color=CYAN_ACCENT),
-                    ft.IconButton(
-                        icon=ft.Icons.COPY_ROUNDED,
-                        icon_color=EMERALD_ACCENT,
-                        tooltip="Copia Password",
-                        on_click=lambda _: self._copy_to_clipboard(self.generated_pwd_value),
+                    ft.Text(self.generated_pwd_value, font_family="Consolas", size=14, weight=ft.FontWeight.W_700, color=CYAN_ACCENT),
+                    ft.Container(
+                        content=ft.IconButton(
+                            icon=ft.Icons.CONTENT_COPY_ROUNDED,
+                            icon_color=EMERALD_ACCENT,
+                            icon_size=16,
+                            tooltip="Copia Password",
+                            on_click=lambda _: self._copy_to_clipboard(self.generated_pwd_value),
+                        ),
+                        bgcolor="#192C26",
+                        border_radius=10,
                     ),
                 ],
             ),
@@ -745,13 +889,18 @@ class LuxCipherFletApp:
             border=make_border(BORDER_COLOR),
             padding=14,
             content=ft.Column(
-                spacing=6,
+                spacing=4,
                 controls=[
                     ft.Row(
                         alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                         controls=[
-                            ft.Text("Lunghezza Password", weight=ft.FontWeight.BOLD, size=12, color=TEXT_WHITE),
-                            ft.Text(f"{self.gen_length} caratteri", color=PURPLE_HOVER, weight=ft.FontWeight.BOLD, size=12),
+                            ft.Text("Lunghezza", weight=ft.FontWeight.W_600, size=12, color=TEXT_WHITE),
+                            ft.Container(
+                                content=ft.Text(f"{self.gen_length} caratteri", color=PURPLE_HOVER, weight=ft.FontWeight.W_700, size=11),
+                                bgcolor="#201E38",
+                                border_radius=8,
+                                padding=make_padding(horizontal=8, vertical=2),
+                            ),
                         ],
                     ),
                     slider_len,
@@ -766,10 +915,18 @@ class LuxCipherFletApp:
         )
 
         btn_gen = ft.Container(
-            content=ft.Row([ft.Icon(ft.Icons.BOLT_ROUNDED, size=16, color=TEXT_WHITE), ft.Text("Genera Nuova Password", color=TEXT_WHITE, weight=ft.FontWeight.BOLD, size=14)], alignment=ft.MainAxisAlignment.CENTER, tight=True),
+            content=ft.Row(
+                [
+                    ft.Icon(ft.Icons.AUTO_FIX_HIGH_ROUNDED, size=16, color=TEXT_WHITE),
+                    ft.Text("Rigenera Nuova Password", color=TEXT_WHITE, weight=ft.FontWeight.W_600, size=13),
+                ],
+                alignment=ft.MainAxisAlignment.CENTER,
+                spacing=8,
+            ),
             bgcolor=PURPLE_PRIMARY,
-            border_radius=16,
-            padding=make_padding(vertical=12),
+            border_radius=12,
+            height=42,
+            alignment=ft.Alignment(0, 0),
             on_click=lambda _: self._generate_pwd(update_ui=True),
             ink=True,
         )
@@ -777,7 +934,7 @@ class LuxCipherFletApp:
         return ft.Container(
             expand=True,
             content=ft.Column(
-                spacing=12,
+                spacing=10,
                 controls=[
                     pwd_display,
                     options_card,
@@ -832,3 +989,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

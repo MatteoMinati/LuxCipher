@@ -82,8 +82,41 @@ class DesktopAppTests(unittest.TestCase):
         app = LuxCipherFletApp(page=mock_page, account_store=MagicMock())
         title_bar = app._build_custom_title_bar()
         self.assertIsNotNone(title_bar)
+        app._running = False
+
+    def test_inactivity_timeout_and_auto_lock(self) -> None:
+        with TemporaryDirectory() as directory:
+            db_path = Path(directory) / "vault.db"
+            store = AccountStore(db_path)
+            mock_page = MagicMock()
+            app = LuxCipherFletApp(page=mock_page, account_store=store, auto_lock_timeout=0.01)
+
+            # Setup account and open vault
+            app.auth_username_field.value = "matteo"
+            app.auth_password_field.value = "SuperPass123!"
+            app.auth_confirm_field.value = "SuperPass123!"
+            app._submit_auth()
+            self.assertTrue(store.is_open())
+
+            # Trigger auto-lock
+            app._trigger_auto_lock()
+            self.assertFalse(store.is_open())
+            self.assertEqual(app.auth_mode, "login")
+            self.assertEqual(app.current_username, "")
+
+            app._running = False
+
+    def test_record_activity_resets_timestamp(self) -> None:
+        mock_page = MagicMock()
+        app = LuxCipherFletApp(page=mock_page, account_store=MagicMock())
+        old_time = app.last_activity_time
+        app.last_activity_time = old_time - 100
+        app.record_activity()
+        self.assertGreater(app.last_activity_time, old_time - 50)
+        app._running = False
 
 
 if __name__ == "__main__":
     unittest.main()
+
 

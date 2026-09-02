@@ -7,6 +7,8 @@ import ctypes.wintypes as wt
 import os
 from pathlib import Path
 import sys
+import threading
+import time
 from typing import Any
 
 import flet as ft
@@ -19,6 +21,8 @@ from luxcipher.password_generator import (
     PasswordOptions,
     generate_password,
 )
+
+AUTO_LOCK_TIMEOUT_SECONDS = 20 * 60  # 20 minutes (1200 seconds)
 
 # Colors - Clean Minimal Dark Palette
 BG_ROOT = "#0C0D15"
@@ -90,9 +94,17 @@ def set_system_clipboard(text: str) -> None:
 
 
 class LuxCipherFletApp:
-    def __init__(self, page: ft.Page, account_store: AccountStore | None = None) -> None:
+    def __init__(
+        self,
+        page: ft.Page,
+        account_store: AccountStore | None = None,
+        auto_lock_timeout: float = AUTO_LOCK_TIMEOUT_SECONDS,
+    ) -> None:
         self.page = page
         self.account_store = account_store or AccountStore.default()
+        self.auto_lock_timeout = auto_lock_timeout
+        self.last_activity_time = time.time()
+        self._running = True
         self.current_username = ""
         self.auth_mode = "setup" if not self.account_store.exists() else "login"
         self.active_tab = "vault"  # "vault" or "generator"
@@ -117,17 +129,55 @@ class LuxCipherFletApp:
 
         self._configure_page()
         self._generate_pwd()
+        self._start_inactivity_timer()
         self.render()
 
     @property
     def _salt_path(self) -> Path:
         return self.account_store.path.with_name("vault.salt")
 
+    def _start_inactivity_timer(self) -> None:
+        def _timer_loop() -> None:
+            while self._running:
+                time.sleep(2)
+                if not self._running:
+                    break
+                if self.account_store.is_open():
+                    elapsed = time.time() - self.last_activity_time
+                    if elapsed >= self.auto_lock_timeout:
+                        self._trigger_auto_lock()
+
+        self._timer_thread = threading.Thread(
+            target=_timer_loop,
+            daemon=True,
+            name="LuxCipherInactivityTimer",
+        )
+        self._timer_thread.start()
+
+    def record_activity(self) -> None:
+        """Update timestamp on any user interaction to prevent timeout."""
+        self.last_activity_time = time.time()
+
+    def _trigger_auto_lock(self) -> None:
+        """Lock vault and notify the user when timeout is reached."""
+        if not self.account_store.is_open():
+            return
+        self._lock_vault()
+        try:
+            self._show_snackbar("Sessione scaduta per inattività (20 min). Vault bloccato.", is_error=True)
+        except Exception:
+            pass
+
     def _configure_page(self) -> None:
         self.page.title = "LuxCipher — Secure Password Vault"
         self.page.theme_mode = ft.ThemeMode.DARK
         self.page.bgcolor = BG_ROOT
         self.page.padding = 0
+
+        try:
+            self.page.on_keyboard_event = lambda _: self.record_activity()
+        except Exception:
+            pass
 
         try:
             self.page.window.title_bar_hidden = True
@@ -193,6 +243,7 @@ class LuxCipherFletApp:
         )
 
     def _minimize_window(self) -> None:
+        self.record_activity()
         try:
             self.page.window.minimized = True
             self.page.window.update()
@@ -203,6 +254,7 @@ class LuxCipherFletApp:
                 pass
 
     def _close_window(self) -> None:
+        self._running = False
         try:
             self.account_store.close()
         except Exception:
@@ -426,10 +478,12 @@ class LuxCipherFletApp:
         )
 
     def _set_auth_mode(self, mode: str) -> None:
+        self.record_activity()
         self.auth_mode = mode
         self.render()
 
     def _submit_auth(self) -> None:
+        self.record_activity()
         username = self.auth_username_field.value.strip() if self.auth_username_field.value else ""
         password = self.auth_password_field.value if self.auth_password_field.value else ""
 
@@ -606,6 +660,7 @@ class LuxCipherFletApp:
         )
 
     def _set_active_tab(self, tab_name: str) -> None:
+        self.record_activity()
         self.active_tab = tab_name
         self.render()
 
@@ -807,10 +862,12 @@ class LuxCipherFletApp:
         )
 
     def _toggle_table_passwords(self) -> None:
+        self.record_activity()
         self.show_passwords_in_table = not self.show_passwords_in_table
         self.render()
 
     def _copy_to_clipboard(self, text: str) -> None:
+        self.record_activity()
         set_system_clipboard(text)
         try:
             self.page.clipboard.set(text)
@@ -819,6 +876,7 @@ class LuxCipherFletApp:
         self._show_snackbar("Password copiata negli appunti!")
 
     def _fill_generated_password(self) -> None:
+        self.record_activity()
         if not self.generated_pwd_value:
             self._generate_pwd()
         self.new_pwd_field.value = self.generated_pwd_value
@@ -829,6 +887,7 @@ class LuxCipherFletApp:
         self._show_snackbar("Password generata inserita nel form!")
 
     def _add_account_entry(self) -> None:
+        self.record_activity()
         srv = self.new_service_field.value.strip() if self.new_service_field.value else ""
         uname = self.new_user_field.value.strip() if self.new_user_field.value else ""
         pwd = self.new_pwd_field.value if self.new_pwd_field.value else ""
@@ -944,10 +1003,12 @@ class LuxCipherFletApp:
         )
 
     def _on_length_change(self, val: int) -> None:
+        self.record_activity()
         self.gen_length = val
         self._generate_pwd(update_ui=True)
 
     def _toggle_gen_opt(self, opt_name: str, val: bool) -> None:
+        self.record_activity()
         if opt_name == "lower": self.gen_lowercase = val
         elif opt_name == "upper": self.gen_uppercase = val
         elif opt_name == "digits": self.gen_digits = val
@@ -956,6 +1017,7 @@ class LuxCipherFletApp:
         self._generate_pwd(update_ui=True)
 
     def _generate_pwd(self, update_ui: bool = False) -> None:
+        self.record_activity()
         try:
             opts = PasswordOptions(
                 length=self.gen_length,

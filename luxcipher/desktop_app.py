@@ -139,7 +139,10 @@ class LuxCipherFletApp:
             self.page.window.min_height = 620
             self.page.window.prevent_close = False
             self.page.window.on_event = self._on_window_event
-            self.page.window.center()
+            if hasattr(self.page, "run_task") and hasattr(self.page.window, "center"):
+                self.page.run_task(self.page.window.center)
+            elif hasattr(self.page.window, "center"):
+                self.page.window.center()
         except Exception:
             pass
 
@@ -148,51 +151,55 @@ class LuxCipherFletApp:
             self._close_window()
 
     def _build_custom_title_bar(self) -> ft.Control:
-        return ft.WindowDragArea(
-            content=ft.Container(
-                bgcolor="#121422",
-                padding=make_padding(horizontal=16, vertical=8),
-                content=ft.Row(
-                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                    controls=[
-                        ft.Row(
+        return ft.Container(
+            bgcolor="#121422",
+            padding=make_padding(horizontal=16, vertical=8),
+            content=ft.Row(
+                alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                controls=[
+                    ft.WindowDragArea(
+                        expand=True,
+                        content=ft.Row(
                             spacing=8,
                             controls=[
                                 ft.Icon(ft.Icons.LOCK_ROUNDED, color="#A78BFA", size=18),
                                 ft.Text("LuxCipher", weight=ft.FontWeight.BOLD, size=13, color=TEXT_WHITE),
                             ],
                         ),
-                        ft.Row(
-                            spacing=2,
-                            controls=[
-                                ft.IconButton(
-                                    icon=ft.Icons.REMOVE_ROUNDED,
-                                    icon_color=TEXT_MUTED,
-                                    icon_size=16,
-                                    tooltip="Riduci a icona",
-                                    on_click=lambda _: self._minimize_window(),
-                                ),
-                                ft.IconButton(
-                                    icon=ft.Icons.CLOSE_ROUNDED,
-                                    icon_color=TEXT_MUTED,
-                                    icon_size=16,
-                                    tooltip="Chiudi",
-                                    on_click=lambda _: self._close_window(),
-                                ),
-                            ],
-                        ),
-                    ],
-                ),
-            )
+                    ),
+                    ft.Row(
+                        spacing=2,
+                        controls=[
+                            ft.IconButton(
+                                icon=ft.Icons.REMOVE_ROUNDED,
+                                icon_color=TEXT_MUTED,
+                                icon_size=16,
+                                tooltip="Riduci a icona",
+                                on_click=lambda _: self._minimize_window(),
+                            ),
+                            ft.IconButton(
+                                icon=ft.Icons.CLOSE_ROUNDED,
+                                icon_color=TEXT_MUTED,
+                                icon_size=16,
+                                tooltip="Chiudi",
+                                on_click=lambda _: self._close_window(),
+                            ),
+                        ],
+                    ),
+                ],
+            ),
         )
 
     def _minimize_window(self) -> None:
         try:
             self.page.window.minimized = True
-            self.page.update()
+            self.page.window.update()
         except Exception:
-            pass
+            try:
+                self.page.update()
+            except Exception:
+                pass
 
     def _close_window(self) -> None:
         try:
@@ -200,7 +207,24 @@ class LuxCipherFletApp:
         except Exception:
             pass
         try:
-            self.page.window.destroy()
+            if hasattr(self.page, "run_task") and hasattr(self.page.window, "close"):
+                fut = self.page.run_task(self.page.window.close)
+                if fut:
+                    fut.result(timeout=0.5)
+        except Exception:
+            pass
+        try:
+            if hasattr(self.page, "run_task") and hasattr(self.page.window, "destroy"):
+                fut = self.page.run_task(self.page.window.destroy)
+                if fut:
+                    fut.result(timeout=0.5)
+        except Exception:
+            pass
+        try:
+            hwnd = ctypes.windll.user32.FindWindowW(None, "LuxCipher — Secure Password Vault")
+            if hwnd:
+                WM_CLOSE = 0x0010
+                ctypes.windll.user32.PostMessageW(hwnd, WM_CLOSE, 0, 0)
         except Exception:
             pass
         os._exit(0)

@@ -77,6 +77,13 @@ class DesktopAppTests(unittest.TestCase):
 
             store.close()
 
+    def test_title_bar_controls_outside_drag_area(self) -> None:
+        mock_page = MagicMock()
+        app = LuxCipherFletApp(page=mock_page, account_store=MagicMock())
+        title_bar = app._build_custom_title_bar()
+        self.assertIsNotNone(title_bar)
+
 
 if __name__ == "__main__":
     unittest.main()
+

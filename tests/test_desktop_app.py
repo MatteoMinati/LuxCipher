@@ -105,6 +105,7 @@ class DesktopAppTests(unittest.TestCase):
             self.assertEqual(app.current_username, "")
 
             app._running = False
+            store.close()
 
     def test_record_activity_resets_timestamp(self) -> None:
         mock_page = MagicMock()
@@ -115,8 +116,44 @@ class DesktopAppTests(unittest.TestCase):
         self.assertGreater(app.last_activity_time, old_time - 50)
         app._running = False
 
+    def test_search_in_ui(self) -> None:
+        with TemporaryDirectory() as directory:
+            db_path = Path(directory) / "vault.db"
+            store = AccountStore(db_path)
+            mock_page = MagicMock()
+            app = LuxCipherFletApp(page=mock_page, account_store=store)
+
+            # Setup account and open vault
+            app.auth_username_field.value = "matteo"
+            app.auth_password_field.value = "SuperPass123!"
+            app.auth_confirm_field.value = "SuperPass123!"
+            app._submit_auth()
+
+            # Add two accounts
+            app.new_service_field.value = "GitHub"
+            app.new_user_field.value = "octocat@github.com"
+            app.new_pwd_field.value = "pass1"
+            app._add_account_entry()
+
+            app.new_service_field.value = "Google"
+            app.new_user_field.value = "user@gmail.com"
+            app.new_pwd_field.value = "pass2"
+            app._add_account_entry()
+
+            # Test search query
+            app._on_search_change("git")
+            self.assertEqual(app.search_query, "git")
+
+            app._on_search_change("")
+            self.assertEqual(app.search_query, "")
+
+            app._running = False
+            store.close()
+
 
 if __name__ == "__main__":
     unittest.main()
+
+
 
 

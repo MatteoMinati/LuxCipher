@@ -126,6 +126,26 @@ class AccountStore:
         cursor.execute("SELECT id, service, username, password FROM accounts;")
         return cursor.fetchall()
 
+    def search_accounts(self, query: str) -> list[tuple[Any, ...]]:
+        """Search accounts by service name or username/email matching query."""
+        if self.conn is None:
+            raise AccountStoreError("Database is not open.")
+        if not isinstance(query, str):
+            raise TypeError("query must be a string.")
+
+        term = query.strip()
+        if not term:
+            return self.get_all_accounts()
+
+        pattern = f"%{term}%"
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """SELECT id, service, username, password FROM accounts
+               WHERE service LIKE ? OR username LIKE ?;""",
+            (pattern, pattern),
+        )
+        return cursor.fetchall()
+
     def close(self) -> None:
         """Close the database connection and release encryption context."""
         if self.conn is not None:

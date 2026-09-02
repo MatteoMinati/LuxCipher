@@ -114,7 +114,37 @@ class AccountStoreTests(unittest.TestCase):
                 store.open(key)
                 self.assertEqual(store.get_account_username(), "matteominati")
 
+    def test_search_accounts(self) -> None:
+        with TemporaryDirectory() as directory:
+            db_path = Path(directory) / "vault.db"
+            salt = b"\x60" * 16
+            key = derive_master_key("SearchTestPass1!", salt=salt)
+
+            with AccountStore(db_path) as store:
+                store.open(key)
+                store.add_account("GitHub", "octocat@github.com", "gh_pass")
+                store.add_account("Google", "matteo@gmail.com", "google_pass")
+                store.add_account("Netflix", "matteo@netflix.com", "netflix_pass")
+
+                # Search by service name
+                res_gh = store.search_accounts("git")
+                self.assertEqual(len(res_gh), 1)
+                self.assertEqual(res_gh[0][1], "GitHub")
+
+                # Search by username / email
+                res_matteo = store.search_accounts("matteo")
+                self.assertEqual(len(res_matteo), 2)
+
+                # Search with empty query returns all
+                res_all = store.search_accounts("")
+                self.assertEqual(len(res_all), 3)
+
+                # Search with non-matching query
+                res_none = store.search_accounts("nonexistent")
+                self.assertEqual(len(res_none), 0)
+
 
 if __name__ == "__main__":
     unittest.main()
+
 

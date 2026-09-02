@@ -126,6 +126,8 @@ class LuxCipherFletApp:
         self.new_service_field = ft.TextField()
         self.new_user_field = ft.TextField()
         self.new_pwd_field = ft.TextField()
+        self.search_query = ""
+        self.search_field = ft.TextField()
 
         self._configure_page()
         self._generate_pwd()
@@ -664,10 +666,92 @@ class LuxCipherFletApp:
         self.active_tab = tab_name
         self.render()
 
+    def _get_account_cards(self) -> list[ft.Control]:
+        accounts = []
+        if self.account_store.is_open():
+            if self.search_query.strip():
+                accounts = self.account_store.search_accounts(self.search_query.strip())
+            else:
+                accounts = self.account_store.get_all_accounts()
+
+        if not accounts:
+            empty_text = (
+                f"Nessuna credenziale trovata per '{self.search_query}'"
+                if self.search_query.strip()
+                else "Nessuna credenziale salvata"
+            )
+            empty_subtext = (
+                "Prova con un altro termine di ricerca"
+                if self.search_query.strip()
+                else "Aggiungi la prima credenziale dal form qui sopra"
+            )
+            return [
+                ft.Container(
+                    alignment=ft.Alignment(0, 0),
+                    padding=make_padding(vertical=20),
+                    content=ft.Column(
+                        alignment=ft.MainAxisAlignment.CENTER,
+                        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                        spacing=6,
+                        controls=[
+                            ft.Icon(
+                                ft.Icons.SEARCH_OFF_ROUNDED if self.search_query.strip() else ft.Icons.SHIELD_OUTLINED,
+                                size=26,
+                                color=TEXT_SUBTLE,
+                            ),
+                            ft.Text(empty_text, color=TEXT_MUTED, size=12),
+                            ft.Text(empty_subtext, color=TEXT_SUBTLE, size=10),
+                        ],
+                    ),
+                )
+            ]
+
+        account_cards: list[ft.Control] = []
+        for acc in accounts:
+            acc_id, srv, uname, pwd = acc[0], acc[1], acc[2], acc[3]
+            display_pwd = pwd if self.show_passwords_in_table else ("•" * min(len(pwd), 10))
+
+            card = ft.Container(
+                bgcolor=BG_CARD,
+                border_radius=12,
+                border=make_border(BORDER_COLOR),
+                padding=make_padding(horizontal=14, vertical=10),
+                content=ft.Row(
+                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    controls=[
+                        ft.Column(
+                            spacing=2,
+                            controls=[
+                                ft.Text(srv, weight=ft.FontWeight.W_700, size=13, color=TEXT_WHITE),
+                                ft.Text(uname, size=11, color=TEXT_MUTED),
+                                ft.Text(display_pwd, size=12, color=CYAN_ACCENT, font_family="Consolas"),
+                            ],
+                        ),
+                        ft.Container(
+                            content=ft.IconButton(
+                                icon=ft.Icons.CONTENT_COPY_ROUNDED,
+                                icon_color=EMERALD_ACCENT,
+                                icon_size=16,
+                                tooltip="Copia Password",
+                                on_click=lambda _, p=pwd: self._copy_to_clipboard(p),
+                            ),
+                            bgcolor="#192C26",
+                            border_radius=10,
+                        ),
+                    ],
+                ),
+            )
+            account_cards.append(card)
+        return account_cards
+
     def _build_credentials_tab(self) -> ft.Control:
         accounts = []
         if self.account_store.is_open():
-            accounts = self.account_store.get_all_accounts()
+            if self.search_query.strip():
+                accounts = self.account_store.search_accounts(self.search_query.strip())
+            else:
+                accounts = self.account_store.get_all_accounts()
 
         # Clean form fields
         self.new_service_field = ft.TextField(
@@ -753,6 +837,7 @@ class LuxCipherFletApp:
             padding=14,
             content=ft.Column(
                 spacing=8,
+                horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
                 controls=[
                     ft.Row(
                         [
@@ -769,72 +854,45 @@ class LuxCipherFletApp:
             ),
         )
 
-        # Accounts List Items
-        account_cards: list[ft.Control] = []
-        for acc in accounts:
-            acc_id, srv, uname, pwd = acc[0], acc[1], acc[2], acc[3]
-            display_pwd = pwd if self.show_passwords_in_table else ("•" * min(len(pwd), 10))
+        # Search Bar
+        self.search_field = ft.TextField(
+            hint_text="Cerca servizio, username o email...",
+            hint_style=ft.TextStyle(color=TEXT_SUBTLE, size=12),
+            prefix_icon=ft.Icons.SEARCH_ROUNDED,
+            bgcolor=BG_INPUT,
+            border_color=BORDER_COLOR,
+            focused_border_color=BORDER_FOCUS,
+            border_radius=10,
+            text_size=12,
+            color=TEXT_WHITE,
+            content_padding=make_padding(horizontal=12, vertical=8),
+            height=38,
+            value=self.search_query,
+            on_change=lambda e: self._on_search_change(e.control.value),
+        )
 
-            card = ft.Container(
-                bgcolor=BG_CARD,
-                border_radius=12,
-                border=make_border(BORDER_COLOR),
-                padding=make_padding(horizontal=14, vertical=10),
-                content=ft.Row(
-                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                    controls=[
-                        ft.Column(
-                            spacing=2,
-                            controls=[
-                                ft.Text(srv, weight=ft.FontWeight.W_700, size=13, color=TEXT_WHITE),
-                                ft.Text(uname, size=11, color=TEXT_MUTED),
-                                ft.Text(display_pwd, size=12, color=CYAN_ACCENT, font_family="Consolas"),
-                            ],
-                        ),
-                        ft.Container(
-                            content=ft.IconButton(
-                                icon=ft.Icons.CONTENT_COPY_ROUNDED,
-                                icon_color=EMERALD_ACCENT,
-                                icon_size=16,
-                                tooltip="Copia Password",
-                                on_click=lambda _, p=pwd: self._copy_to_clipboard(p),
-                            ),
-                            bgcolor="#192C26",
-                            border_radius=10,
-                        ),
-                    ],
-                ),
-            )
-            account_cards.append(card)
-
-        cards_list = ft.ListView(
-            controls=account_cards if account_cards else [
-                ft.Container(
-                    alignment=ft.Alignment(0, 0),
-                    padding=make_padding(vertical=24),
-                    content=ft.Column(
-                        alignment=ft.MainAxisAlignment.CENTER,
-                        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                        spacing=6,
-                        controls=[
-                            ft.Icon(ft.Icons.SHIELD_OUTLINED, size=28, color=TEXT_SUBTLE),
-                            ft.Text("Nessuna credenziale salvata", color=TEXT_MUTED, size=12),
-                            ft.Text("Aggiungi la prima credenziale dal form qui sopra", color=TEXT_SUBTLE, size=10),
-                        ],
-                    ),
-                )
-            ],
+        self.cards_list = ft.ListView(
+            controls=self._get_account_cards(),
             spacing=6,
             expand=True,
         )
 
-        toggle_btn = ft.Container(
+        count_label_text = f"{len(accounts)} Trovate" if self.search_query.strip() else f"{len(accounts)} Credenziali Salvate"
+        self.count_label_control = ft.Text(count_label_text, weight=ft.FontWeight.W_700, size=11, color=TEXT_MUTED)
+
+        self.toggle_btn_icon = ft.Icon(
+            ft.Icons.VISIBILITY_OFF if self.show_passwords_in_table else ft.Icons.VISIBILITY,
+            size=13,
+            color=TEXT_MUTED,
+        )
+        self.toggle_btn_text = ft.Text(
+            "Nascondi" if self.show_passwords_in_table else "Mostra in chiaro",
+            size=11,
+            color=TEXT_MUTED,
+        )
+        self.toggle_btn = ft.Container(
             content=ft.Row(
-                [
-                    ft.Icon(ft.Icons.VISIBILITY_OFF if self.show_passwords_in_table else ft.Icons.VISIBILITY, size=13, color=TEXT_MUTED),
-                    ft.Text("Nascondi" if self.show_passwords_in_table else "Mostra in chiaro", size=11, color=TEXT_MUTED),
-                ],
+                [self.toggle_btn_icon, self.toggle_btn_text],
                 spacing=4,
                 tight=True,
             ),
@@ -847,24 +905,55 @@ class LuxCipherFletApp:
             content=ft.Column(
                 expand=True,
                 spacing=8,
+                horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
                 controls=[
                     add_form,
+                    self.search_field,
                     ft.Row(
                         alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                         controls=[
-                            ft.Text(f"{len(accounts)} Credenziali Salvate", weight=ft.FontWeight.W_700, size=11, color=TEXT_MUTED),
-                            toggle_btn,
+                            self.count_label_control,
+                            self.toggle_btn,
                         ],
                     ),
-                    cards_list,
+                    self.cards_list,
                 ],
             ),
         )
 
+    def _on_search_change(self, query: str) -> None:
+        self.record_activity()
+        self.search_query = query
+        try:
+            self.cards_list.controls = self._get_account_cards()
+            accounts = (
+                self.account_store.search_accounts(self.search_query.strip())
+                if self.search_query.strip()
+                else self.account_store.get_all_accounts()
+            )
+            self.count_label_control.value = (
+                f"{len(accounts)} Trovate"
+                if self.search_query.strip()
+                else f"{len(accounts)} Credenziali Salvate"
+            )
+            self.cards_list.update()
+            self.count_label_control.update()
+        except Exception:
+            self.render()
+
     def _toggle_table_passwords(self) -> None:
         self.record_activity()
         self.show_passwords_in_table = not self.show_passwords_in_table
-        self.render()
+        try:
+            self.cards_list.controls = self._get_account_cards()
+            self.toggle_btn_text.value = "Nascondi" if self.show_passwords_in_table else "Mostra in chiaro"
+            self.toggle_btn_icon.name = (
+                ft.Icons.VISIBILITY_OFF if self.show_passwords_in_table else ft.Icons.VISIBILITY
+            )
+            self.cards_list.update()
+            self.toggle_btn.update()
+        except Exception:
+            self.render()
 
     def _copy_to_clipboard(self, text: str) -> None:
         self.record_activity()
@@ -994,6 +1083,7 @@ class LuxCipherFletApp:
             expand=True,
             content=ft.Column(
                 spacing=10,
+                horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
                 controls=[
                     pwd_display,
                     options_card,

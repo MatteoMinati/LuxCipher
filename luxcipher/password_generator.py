@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import secrets
 import string
 from dataclasses import dataclass
@@ -11,6 +12,7 @@ AMBIGUOUS_CHARACTERS = set("0OIl1")
 MAX_PASSWORD_LENGTH = 128
 MIN_PASSWORD_LENGTH = 12
 SYMBOLS = "!@#$%^&*()-_=+[]{};:,.?/"
+VERY_STRONG_ENTROPY_BITS = 100.0
 
 
 @dataclass(frozen=True)
@@ -87,31 +89,52 @@ def _enabled_pools(options: PasswordOptions) -> list[str]:
     return pools
 
 
+def estimate_entropy_bits(password: str) -> float:
+    """Estimate password entropy in bits from its character pool and repetition.
+
+    Pool size alone rates "aaaaaaaaaaaaaaaaaaaaaaaa" as strong, so the length is
+    scaled by the ratio of distinct characters: a password that reuses the same
+    few characters carries far less uncertainty than its length suggests.
+    """
+    if not password:
+        return 0.0
+
+    pool = 0
+    if any(character.islower() for character in password):
+        pool += len(string.ascii_lowercase)
+    if any(character.isupper() for character in password):
+        pool += len(string.ascii_uppercase)
+    if any(character.isdigit() for character in password):
+        pool += len(string.digits)
+    if any(character in SYMBOLS for character in password):
+        pool += len(SYMBOLS)
+
+    # Characters outside the known classes still contribute uncertainty.
+    known = set(string.ascii_letters + string.digits + SYMBOLS)
+    pool += len({character for character in password if character not in known})
+
+    if pool < 2:
+        return 0.0
+
+    distinct_ratio = len(set(password)) / len(password)
+    effective_length = len(password) * distinct_ratio
+    return effective_length * math.log2(pool)
+
+
 def evaluate_password_strength(password: str) -> tuple[float, str, str]:
-    """Calculate password strength score (0.0 to 1.0), description label, and color hex."""
+    """Return a strength score (0.0 to 1.0), an Italian label, and a colour hex."""
     if not password:
         return (0.0, "Nessuna", "#71717A")
 
-    length = len(password)
-    has_lower = any(c.islower() for c in password)
-    has_upper = any(c.isupper() for c in password)
-    has_digit = any(c.isdigit() for c in password)
-    has_symbol = any(c in SYMBOLS for c in password)
+    bits = estimate_entropy_bits(password)
+    score = min(1.0, bits / VERY_STRONG_ENTROPY_BITS)
 
-    variety_count = sum([has_lower, has_upper, has_digit, has_symbol])
-
-    if length < 12:
-        return (0.25, "Molto Debole", "#EF4444")
-    elif length < 16:
-        if variety_count >= 3:
-            return (0.50, "Media", "#F59E0B")
-        return (0.35, "Debole", "#EF4444")
-    elif length < 22:
-        if variety_count >= 3:
-            return (0.80, "Forte", "#06B6D4")
-        return (0.60, "Media", "#F59E0B")
-    else:  # length >= 22
-        if variety_count >= 3:
-            return (1.0, "Molto Forte", "#10B981")
-        return (0.85, "Forte", "#06B6D4")
-
+    if bits < 40:
+        return (score, "Molto Debole", "#EF4444")
+    if bits < 60:
+        return (score, "Debole", "#EF4444")
+    if bits < 80:
+        return (score, "Media", "#F59E0B")
+    if bits < VERY_STRONG_ENTROPY_BITS:
+        return (score, "Forte", "#06B6D4")
+    return (score, "Molto Forte", "#10B981")

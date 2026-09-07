@@ -143,6 +143,26 @@ class AccountStoreTests(unittest.TestCase):
                 res_none = store.search_accounts("nonexistent")
                 self.assertEqual(len(res_none), 0)
 
+    def test_search_treats_like_wildcards_as_literal_text(self) -> None:
+        # Regression: "%" and "_" reached LIKE unescaped, so searching for either
+        # returned every credential instead of the ones containing them.
+        with TemporaryDirectory() as directory:
+            db_path = Path(directory) / "vault.db"
+            salt = b"p" * 16
+            key = derive_master_key("WildcardTestPass1!", salt=salt)
+
+            with AccountStore(db_path) as store:
+                store.open(key)
+                store.add_account("Sconto 100%", "a@example.com", "p1")
+                store.add_account("under_score", "b@example.com", "p2")
+                store.add_account("Netflix", "c@example.com", "p3")
+
+                self.assertEqual(len(store.search_accounts("%")), 1)
+                self.assertEqual(len(store.search_accounts("100%")), 1)
+                self.assertEqual(len(store.search_accounts("_")), 1)
+                self.assertEqual(len(store.search_accounts("net")), 1)
+                self.assertEqual(len(store.search_accounts("%%%")), 0)
+
 
 if __name__ == "__main__":
     unittest.main()

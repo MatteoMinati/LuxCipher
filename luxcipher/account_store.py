@@ -12,6 +12,7 @@ from sqlcipher3 import dbapi2 as sqlite3
 VAULT_DB_FILE = "vault.db"
 APP_DIR_NAME = "LuxCipher"
 ENV_HOME = "LUXCIPHER_HOME"
+LIKE_ESCAPE_CHARACTER = "\\"
 
 
 class AccountStoreError(RuntimeError):
@@ -137,12 +138,12 @@ class AccountStore:
         if not term:
             return self.get_all_accounts()
 
-        pattern = f"%{term}%"
+        pattern = f"%{_escape_like_wildcards(term)}%"
         cursor = self.conn.cursor()
         cursor.execute(
             """SELECT id, service, username, password FROM accounts
-               WHERE service LIKE ? OR username LIKE ?;""",
-            (pattern, pattern),
+               WHERE service LIKE ? ESCAPE ? OR username LIKE ? ESCAPE ?;""",
+            (pattern, LIKE_ESCAPE_CHARACTER, pattern, LIKE_ESCAPE_CHARACTER),
         )
         return cursor.fetchall()
 
@@ -169,6 +170,13 @@ def default_db_path() -> Path:
         return Path(local_app_data) / APP_DIR_NAME / VAULT_DB_FILE
 
     return Path.home() / f".{APP_DIR_NAME.lower()}" / VAULT_DB_FILE
+
+
+def _escape_like_wildcards(term: str) -> str:
+    """Escape LIKE metacharacters so a search for "%" matches a literal percent sign."""
+    escaped = term.replace(LIKE_ESCAPE_CHARACTER, LIKE_ESCAPE_CHARACTER * 2)
+    escaped = escaped.replace("%", LIKE_ESCAPE_CHARACTER + "%")
+    return escaped.replace("_", LIKE_ESCAPE_CHARACTER + "_")
 
 
 def _restrict_to_current_user(path: Path) -> None:

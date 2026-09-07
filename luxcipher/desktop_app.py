@@ -6,6 +6,7 @@ import ctypes
 import ctypes.wintypes as wt
 import os
 from pathlib import Path
+import sys
 import threading
 import time
 from typing import Any
@@ -28,6 +29,7 @@ from luxcipher.password_generator import (
 )
 
 AUTO_LOCK_TIMEOUT_SECONDS = 20 * 60  # 20 minutes (1200 seconds)
+CLIPBOARD_CLEAR_SECONDS = 30
 
 # Colors - Clean Minimal Dark Palette
 BG_ROOT = "#0C0D15"
@@ -56,6 +58,10 @@ def make_border(color: str = BORDER_COLOR, width: int = 1) -> ft.Border:
     return ft.Border(top=side, right=side, bottom=side, left=side)
 
 
+CF_UNICODETEXT = 13
+GMEM_MOVEABLE = 0x0002
+
+
 def set_system_clipboard(text: str) -> None:
     """Fast, native Windows clipboard copy without Tkinter interference."""
     try:
@@ -78,9 +84,6 @@ def set_system_clipboard(text: str) -> None:
         kernel32.GlobalUnlock.argtypes = [wt.HGLOBAL]
         kernel32.GlobalUnlock.restype = wt.BOOL
 
-        CF_UNICODETEXT = 13
-        GMEM_MOVEABLE = 0x0002
-
         if not user32.OpenClipboard(None):
             return
 
@@ -98,16 +101,74 @@ def set_system_clipboard(text: str) -> None:
         pass
 
 
+def get_system_clipboard() -> str | None:
+    """Return the clipboard's Unicode text, or None when it holds anything else."""
+    try:
+        user32 = ctypes.windll.user32
+        kernel32 = ctypes.windll.kernel32
+
+        user32.OpenClipboard.argtypes = [wt.HWND]
+        user32.OpenClipboard.restype = wt.BOOL
+        user32.GetClipboardData.argtypes = [wt.UINT]
+        user32.GetClipboardData.restype = wt.HANDLE
+        user32.CloseClipboard.argtypes = []
+        user32.CloseClipboard.restype = wt.BOOL
+        kernel32.GlobalLock.argtypes = [wt.HGLOBAL]
+        kernel32.GlobalLock.restype = wt.LPVOID
+        kernel32.GlobalUnlock.argtypes = [wt.HGLOBAL]
+        kernel32.GlobalUnlock.restype = wt.BOOL
+
+        if not user32.OpenClipboard(None):
+            return None
+        try:
+            handle = user32.GetClipboardData(CF_UNICODETEXT)
+            if not handle:
+                return None
+
+            pointer = kernel32.GlobalLock(handle)
+            if not pointer:
+                return None
+            try:
+                return ctypes.wstring_at(pointer)
+            finally:
+                kernel32.GlobalUnlock(handle)
+        finally:
+            user32.CloseClipboard()
+    except Exception:
+        return None
+
+
+def clear_system_clipboard() -> None:
+    """Empty the clipboard so a copied password does not linger there."""
+    try:
+        user32 = ctypes.windll.user32
+        user32.OpenClipboard.argtypes = [wt.HWND]
+        user32.OpenClipboard.restype = wt.BOOL
+        user32.EmptyClipboard.argtypes = []
+        user32.EmptyClipboard.restype = wt.BOOL
+        user32.CloseClipboard.argtypes = []
+        user32.CloseClipboard.restype = wt.BOOL
+
+        if not user32.OpenClipboard(None):
+            return
+        user32.EmptyClipboard()
+        user32.CloseClipboard()
+    except Exception:
+        pass
+
+
 class LuxCipherFletApp:
     def __init__(
         self,
         page: ft.Page,
         account_store: AccountStore | None = None,
         auto_lock_timeout: float = AUTO_LOCK_TIMEOUT_SECONDS,
+        clipboard_clear_seconds: float = CLIPBOARD_CLEAR_SECONDS,
     ) -> None:
         self.page = page
         self.account_store = account_store or AccountStore.default()
         self.auto_lock_timeout = auto_lock_timeout
+        self.clipboard_clear_seconds = clipboard_clear_seconds
         self.last_activity_time = time.time()
         self._running = True
         self.current_username = ""
@@ -123,6 +184,7 @@ class LuxCipherFletApp:
         self.gen_symbols = True
         self.gen_no_ambiguous = False
         self.generated_pwd_value = ""
+        self.generator_error = ""
 
         # Generator controls
         self.gen_pwd_text = ft.Text(
@@ -339,7 +401,32 @@ class LuxCipherFletApp:
                 ctypes.windll.user32.PostMessageW(hwnd, WM_CLOSE, 0, 0)
         except Exception:
             pass
-        os._exit(0)
+
+        self._force_exit_after_grace()
+
+    def _force_exit_after_grace(self, grace_seconds: float = 1.5) -> None:
+        """Terminate the process only if the clean shutdown above did not.
+
+        The Flet desktop host has been seen keeping the process alive after the
+        window closes, which is why this fallback exists. Calling os._exit
+        immediately skipped every flush and atexit handler even when the clean
+        path would have worked, so it now runs on a daemon watchdog: if the
+        process exits on its own first, this never fires.
+        """
+        def _watchdog() -> None:
+            time.sleep(grace_seconds)
+            try:
+                sys.stdout.flush()
+                sys.stderr.flush()
+            except Exception:
+                pass
+            os._exit(0)
+
+        threading.Thread(
+            target=_watchdog,
+            daemon=True,
+            name="LuxCipherExitWatchdog",
+        ).start()
 
     def _show_snackbar(self, message: str, is_error: bool = False) -> None:
         # Flet dropped page.snack_bar: assigning it creates a plain attribute that
@@ -596,8 +683,11 @@ class LuxCipherFletApp:
                 master_key = derive_master_key(password, salt_path=self._salt_path)
                 self.account_store.open(master_key)
 
+                # A missing username means this is not a vault set up by the app:
+                # an empty database file accepts any key, so treating None as a
+                # pass would let any password through.
                 saved_user = self.account_store.get_account_username()
-                if saved_user and saved_user.strip().lower() != username.lower():
+                if saved_user is None or saved_user.strip().lower() != username.lower():
                     self.account_store.close()
                     self._show_snackbar("Nome Utente o Master Password errati", is_error=True)
                     return
@@ -1039,7 +1129,29 @@ class LuxCipherFletApp:
             self.page.clipboard.set(text)
         except Exception:
             pass
-        self._show_snackbar("Password copiata negli appunti!")
+
+        self._schedule_clipboard_clear(text)
+        self._show_snackbar(
+            f"Password copiata! Gli appunti si svuotano tra "
+            f"{int(self.clipboard_clear_seconds)}s."
+        )
+
+    def _schedule_clipboard_clear(self, copied: str) -> None:
+        """Erase the copied password from the clipboard after a delay."""
+        thread = threading.Thread(
+            target=self._clipboard_clear_worker,
+            args=(copied,),
+            daemon=True,
+            name="LuxCipherClipboardCleaner",
+        )
+        thread.start()
+
+    def _clipboard_clear_worker(self, copied: str) -> None:
+        time.sleep(self.clipboard_clear_seconds)
+        # Only erase our own password: the user may have copied something else
+        # in the meantime, and wiping that would be destructive.
+        if get_system_clipboard() == copied:
+            clear_system_clipboard()
 
     def _fill_generated_password(self) -> None:
         self.record_activity()
@@ -1077,7 +1189,8 @@ class LuxCipherFletApp:
             self._generate_pwd()
 
         score, label, color_hex = evaluate_password_strength(self.generated_pwd_value)
-        self.gen_pwd_text.value = self.generated_pwd_value
+        self.gen_pwd_text.value = self.generated_pwd_value or self.generator_error
+        self.gen_pwd_text.color = ROSE_DANGER if self.generator_error else CYAN_ACCENT
         self.gen_strength_label.value = label
         self.gen_strength_label.color = color_hex
         self.gen_strength_bar.value = score
@@ -1132,6 +1245,8 @@ class LuxCipherFletApp:
 
         self.gen_slider.on_change = lambda e: self._on_length_slider_change(int(e.control.value))
         self.gen_length_input.on_change = lambda e: self._on_length_input_change(e.control.value)
+        self.gen_length_input.on_blur = lambda _: self._commit_length_input()
+        self.gen_length_input.on_submit = lambda _: self._commit_length_input()
 
         options_card = ft.Container(
             bgcolor=BG_CARD,
@@ -1195,7 +1310,8 @@ class LuxCipherFletApp:
         """Update password display, strength indicator, and controls in-place without rebuilding."""
         self._generate_pwd()
         score, label, color_hex = evaluate_password_strength(self.generated_pwd_value)
-        self.gen_pwd_text.value = self.generated_pwd_value
+        self.gen_pwd_text.value = self.generated_pwd_value or self.generator_error
+        self.gen_pwd_text.color = ROSE_DANGER if self.generator_error else CYAN_ACCENT
         self.gen_strength_label.value = label
         self.gen_strength_label.color = color_hex
         self.gen_strength_bar.value = score
@@ -1218,18 +1334,51 @@ class LuxCipherFletApp:
         self._update_generator_ui()
 
     def _on_length_input_change(self, val_str: str) -> None:
+        """Apply the typed length while it is in range, without correcting it yet.
+
+        Clamping on every keystroke would rewrite the first digit of "20" to the
+        minimum before the second one is typed, so out-of-range values are left
+        alone until the field is committed.
+        """
         self.record_activity()
         clean = "".join(c for c in val_str if c.isdigit())
-        if clean:
-            val = int(clean)
-            if MIN_PASSWORD_LENGTH <= val <= MAX_PASSWORD_LENGTH:
-                self.gen_length = val
-                self.gen_slider.value = float(val)
-                try:
-                    self.gen_slider.update()
-                except Exception:
-                    pass
-                self._update_generator_ui()
+        if not clean:
+            return
+
+        val = int(clean)
+        if MIN_PASSWORD_LENGTH <= val <= MAX_PASSWORD_LENGTH:
+            self.gen_length = val
+            self.gen_slider.value = float(val)
+            try:
+                self.gen_slider.update()
+            except Exception:
+                pass
+            self._update_generator_ui()
+
+    def _commit_length_input(self) -> None:
+        """On blur or submit, clamp whatever is in the field and explain the change."""
+        self.record_activity()
+        raw = self.gen_length_input.value or ""
+        clean = "".join(c for c in raw if c.isdigit())
+        requested = int(clean) if clean else self.gen_length
+        val = max(MIN_PASSWORD_LENGTH, min(MAX_PASSWORD_LENGTH, requested))
+
+        if val != requested or not clean:
+            self._show_snackbar(
+                f"La lunghezza deve essere tra {MIN_PASSWORD_LENGTH} e "
+                f"{MAX_PASSWORD_LENGTH}: impostata a {val}",
+                is_error=True,
+            )
+
+        self.gen_length = val
+        self.gen_slider.value = float(val)
+        self.gen_length_input.value = str(val)
+        for control in (self.gen_slider, self.gen_length_input):
+            try:
+                control.update()
+            except Exception:
+                pass
+        self._update_generator_ui()
 
     def _on_regenerate_click(self) -> None:
         self.record_activity()
@@ -1261,8 +1410,21 @@ class LuxCipherFletApp:
                 exclude_ambiguous=self.gen_no_ambiguous,
             )
             self.generated_pwd_value = generate_password(opts)
-        except Exception:
+            self.generator_error = ""
+        except ValueError:
+            # Unchecking every character set used to blank the password with no
+            # explanation. Keep the reason so the UI can show it, in the UI's
+            # language rather than the generator's.
             self.generated_pwd_value = ""
+            if not any(
+                (self.gen_lowercase, self.gen_uppercase, self.gen_digits, self.gen_symbols)
+            ):
+                self.generator_error = "Seleziona almeno un set di caratteri"
+            else:
+                self.generator_error = (
+                    f"Lunghezza non valida: usa un valore tra "
+                    f"{MIN_PASSWORD_LENGTH} e {MAX_PASSWORD_LENGTH}"
+                )
 
         if update_ui:
             self._update_generator_ui()

@@ -91,6 +91,24 @@ class PasswordGeneratorTests(unittest.TestCase):
         self.assertEqual(score, 1.0)
         self.assertEqual(label, "Molto Forte")
 
+    def test_repetition_is_not_mistaken_for_strength(self) -> None:
+        from luxcipher.password_generator import evaluate_password_strength
+
+        # Regression: scoring on length and character variety alone rated a long
+        # run of one character as strong.
+        for repetitive in ("a" * 24, "ab" * 12, "1234" * 8):
+            with self.subTest(password=repetitive):
+                score, label, _ = evaluate_password_strength(repetitive)
+                self.assertEqual(label, "Molto Debole")
+                self.assertLess(score, 0.4)
+
+    def test_entropy_grows_with_length_and_pool(self) -> None:
+        from luxcipher.password_generator import estimate_entropy_bits
+
+        self.assertEqual(estimate_entropy_bits(""), 0.0)
+        self.assertLess(estimate_entropy_bits("abcdefgh"), estimate_entropy_bits("abcdefghijkl"))
+        self.assertLess(estimate_entropy_bits("abcdefghijkl"), estimate_entropy_bits("aB3!dEf9hIjK"))
+
 
 if __name__ == "__main__":
     unittest.main()

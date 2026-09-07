@@ -1,3 +1,4 @@
+from unittest import mock
 from unittest.mock import MagicMock
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -5,8 +6,10 @@ import unittest
 
 import flet as ft
 
+from luxcipher import desktop_app
 from luxcipher.account_store import AccountStore
 from luxcipher.desktop_app import LuxCipherFletApp, LuxCipherApp
+from luxcipher.password_generator import MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH
 
 
 class DesktopAppTests(unittest.TestCase):
@@ -179,7 +182,6 @@ class DesktopAppTests(unittest.TestCase):
 
         app._running = False
 
-
     def test_snackbar_reaches_the_page_through_a_supported_api(self) -> None:
         # Regression: the app used to assign page.snack_bar, which Flet no longer
         # renders, so every error message was silently invisible.
@@ -234,6 +236,90 @@ class DesktopAppTests(unittest.TestCase):
 
         mock_page.run_thread.assert_called_once_with(callback)
         callback.assert_not_called()
+        app._running = False
+
+    def test_generator_reports_why_it_produced_nothing(self) -> None:
+        # Regression: unchecking every character set blanked the password and
+        # swallowed the reason.
+        app = LuxCipherFletApp(page=MagicMock(), account_store=MagicMock())
+        for option in ("lower", "upper", "digits", "symbols"):
+            app._toggle_gen_opt(option, False)
+
+        self.assertEqual(app.generated_pwd_value, "")
+        self.assertTrue(app.generator_error)
+        self.assertEqual(app.gen_pwd_text.value, app.generator_error)
+
+        # Re-enabling a set clears the error and produces a password again.
+        app._toggle_gen_opt("lower", True)
+        self.assertEqual(app.generator_error, "")
+        self.assertEqual(len(app.generated_pwd_value), app.gen_length)
+        app._running = False
+
+    def test_length_field_clamps_only_once_committed(self) -> None:
+        app = LuxCipherFletApp(page=MagicMock(), account_store=MagicMock())
+        app._on_length_slider_change(20)
+
+        # Typing the first digit of "20" must not be corrected mid-entry.
+        app._on_length_input_change("2")
+        self.assertEqual(app.gen_length, 20)
+
+        # Committing an out-of-range value clamps it and syncs both controls.
+        app.gen_length_input.value = "999"
+        app._commit_length_input()
+        self.assertEqual(app.gen_length, MAX_PASSWORD_LENGTH)
+        self.assertEqual(app.gen_length_input.value, str(MAX_PASSWORD_LENGTH))
+        self.assertEqual(app.gen_slider.value, float(MAX_PASSWORD_LENGTH))
+
+        app.gen_length_input.value = "3"
+        app._commit_length_input()
+        self.assertEqual(app.gen_length, MIN_PASSWORD_LENGTH)
+        self.assertEqual(app.gen_length_input.value, str(MIN_PASSWORD_LENGTH))
+        app._running = False
+
+    def test_login_rejects_a_vault_without_a_stored_username(self) -> None:
+        # An empty database file opens under any key, so a missing username must
+        # not be treated as a match.
+        with TemporaryDirectory() as directory:
+            db_path = Path(directory) / "vault.db"
+            store = AccountStore(db_path)
+            app = LuxCipherFletApp(page=MagicMock(), account_store=store)
+
+            app.auth_username_field.value = "test_user"
+            app.auth_password_field.value = "SuperPass123!"
+            app.auth_confirm_field.value = "SuperPass123!"
+            app._submit_auth()
+            self.assertTrue(store.is_open())
+
+            # Drop the username the way a pre-metadata vault would look.
+            store.conn.execute("DELETE FROM metadata WHERE key = 'username';")
+            store.conn.commit()
+            app._lock_vault()
+
+            app.auth_mode = "login"
+            app.auth_username_field.value = "test_user"
+            app.auth_password_field.value = "SuperPass123!"
+            app._submit_auth()
+            self.assertFalse(store.is_open())
+
+            app._running = False
+            store.close()
+
+    def test_copied_password_is_erased_from_the_clipboard(self) -> None:
+        app = LuxCipherFletApp(
+            page=MagicMock(),
+            account_store=MagicMock(),
+            clipboard_clear_seconds=0,
+        )
+        cleared: list[bool] = []
+        with mock.patch.object(desktop_app, "get_system_clipboard", return_value="s3cret"),              mock.patch.object(desktop_app, "clear_system_clipboard", lambda: cleared.append(True)):
+            app._clipboard_clear_worker("s3cret")
+        self.assertEqual(cleared, [True])
+
+        # Something else was copied in the meantime: leave it alone.
+        cleared.clear()
+        with mock.patch.object(desktop_app, "get_system_clipboard", return_value="altro"),              mock.patch.object(desktop_app, "clear_system_clipboard", lambda: cleared.append(True)):
+            app._clipboard_clear_worker("s3cret")
+        self.assertEqual(cleared, [])
         app._running = False
 
 

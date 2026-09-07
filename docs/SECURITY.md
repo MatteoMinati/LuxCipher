@@ -5,20 +5,23 @@ that is understandable without inventing new cryptography.
 
 ## Rules
 
-- Never store the master password.
-- Never log passwords, keys, plaintext vaults, or decrypted entries.
+These are constraints on the code, not aspirations. Where the implementation
+falls short of one, the gap is recorded under Early Threat Model below.
+
+- Never store the master password or the derived master key.
+- Never log passwords, keys, or decrypted entries.
 - Generate passwords with a cryptographically secure random source.
 - Never commit real vault files or real secrets.
-- Use a well-reviewed cryptographic library.
+- Use a well-reviewed cryptographic library. Do not invent cryptography.
 - Use authenticated encryption, not encryption alone.
 - Use a unique random salt for key derivation.
 - Use a unique random nonce or IV for each encryption operation.
 - Treat all decrypted data as sensitive.
-- Store local account metadata on the device only.
-- Store a password verifier, never the master password or derived key.
-- Compare password verifiers with constant-time comparison.
-- Keep vault entry titles, usernames, passwords, URLs, and notes inside the
-  encrypted payload once storage is implemented.
+- Keep account data on the device only.
+- Keep every credential field inside the encrypted database, including the
+  service name and the username.
+- Never destroy key material to recover from an error. Refuse and report
+  instead, so a recoverable vault is never made unrecoverable.
 
 ## Decisions Made
 
@@ -81,8 +84,10 @@ LuxCipher should initially protect against:
 LuxCipher does not yet protect against:
 
 - Malware running on the unlocked machine.
-- A compromised clipboard. Copied passwords are also never cleared from the
-  clipboard, so they stay there until something else overwrites them.
+- A compromised clipboard. A copied password is erased 30 seconds after the
+  copy, and only if the clipboard still holds it, so anything the user copied in
+  the meantime survives. Anything reading the clipboard inside that window still
+  sees the password, and clipboard history features may retain it regardless.
 - A weak master password, beyond the 12 character minimum.
 - Phishing or fake unlock screens.
 - Another local user account reading the database file. Permissions are set with

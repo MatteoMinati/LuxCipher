@@ -1,0 +1,6 @@
+-r requirements.txt
+
+# Only needed by tools/build_implementation_notes_pdf.py, which builds a PDF
+# from docs/IMPLEMENTATION_NOTES.md. That file is intentionally untracked, so
+# the tool only works in a checkout that has a local copy of it.
+reportlab~=4.5

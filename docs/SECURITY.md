@@ -20,62 +20,55 @@ that is understandable without inventing new cryptography.
 - Keep vault entry titles, usernames, passwords, URLs, and notes inside the
   encrypted payload once storage is implemented.
 
-## Decisions To Make Before Coding Crypto
+## Decisions Made
 
-- Programming language and runtime: Python desktop app with Tkinter for now.
-- KDF choice, such as Argon2id, scrypt, or PBKDF2.
-- Authenticated encryption choice, such as XChaCha20-Poly1305 or AES-GCM.
-- Vault file format.
+- Programming language and runtime: Python desktop app built with Flet.
+- KDF: Argon2id, via `argon2-cffi`, with the OWASP parameters (time cost 3,
+  64 MiB memory, parallelism 4, 32-byte output).
+- Authenticated encryption: delegated to SQLCipher, which encrypts each database
+  page with AES-256-CBC and authenticates it with a per-page HMAC.
+- Storage format: a SQLCipher database, not a hand-rolled vault file.
 - UI direction: desktop app first. Web can be added later.
 
-## Data Model Decision
+## Storage Decision
 
-The current vault model represents decrypted in-memory data only. It is not the
-encrypted file format.
+Credentials live in an encrypted SQLCipher database rather than in a custom
+encrypted file. This avoids designing a vault format, a nonce scheme and a
+tamper-detection scheme by hand, which was the main risk of the earlier plan.
 
-The future encrypted file should keep only public cryptographic metadata outside
-the ciphertext, such as schema version, KDF name, salt, KDF parameters,
-encryption algorithm, and nonce or IV.
+The consequence is that the whole database, including the username in the
+`metadata` table, is opaque on disk. Nothing but the salt is stored outside the
+ciphertext.
+
+`secure_delete` is enabled so overwritten rows are not left readable in freed
+pages, and `temp_store` is set to memory so query spill files never touch the
+disk in plaintext.
 
 ## Local Authentication Decision
 
 LuxCipher uses local-only accounts. There is no remote identity provider, no
-cloud login, and no server-side account recovery in the current design.
+cloud login, and no server-side account recovery.
 
-The local account record stores:
+There is no separate password verifier. The master password is verified by
+whether SQLCipher can decrypt page 1 of the database. This keeps a single
+secret-dependent path instead of two, but it has a real consequence: a wrong
+master password and a database that was never readable with that key are
+indistinguishable, and both surface as the same error.
 
-- account schema version;
-- local account id;
-- username;
-- creation and update timestamps;
-- public scrypt parameters;
-- password verifier.
+The device stores:
 
-The local account record does not store:
+- the encrypted database, at `%LOCALAPPDATA%\LuxCipher\vault.db`;
+- a random 16-byte Argon2id salt, at `%LOCALAPPDATA%\LuxCipher\vault.salt`.
 
-- master password;
-- derived master key;
-- decrypted vault data;
-- vault entry data.
+It never stores the master password or the derived master key.
 
-The current verifier is produced by deriving a key with scrypt and then applying
-HMAC-SHA256 with a LuxCipher-specific context string. Verification recomputes
-the verifier from the candidate master password and compares it with
-`hmac.compare_digest`.
+Both files are required. The salt is never regenerated when the existing file is
+the wrong size, because doing so would derive a different key and leave the
+database permanently undecryptable while reporting only a wrong password.
 
-Stored KDF parameters are validated with upper bounds before use. This keeps a
-tampered local account record from requesting unreasonable scrypt parameters.
-
-Local account metadata is stored as JSON on the user's device. Writes are
-performed through a temporary file and atomic replacement, and existing account
-metadata is not overwritten unless the caller explicitly asks for that behavior.
-File permissions are restricted to the current user where the operating system
-supports it.
-
-This protects against accidentally storing the master password. It does not make
-a weak master password safe if an attacker obtains the local account record,
-because offline guessing is still possible. A strong master password remains
-mandatory.
+None of this makes a weak master password safe: an attacker holding the database
+can guess offline, bounded only by Argon2id. A strong master password remains
+mandatory, and account creation enforces a 12 character minimum.
 
 ## Early Threat Model
 
@@ -88,6 +81,12 @@ LuxCipher should initially protect against:
 LuxCipher does not yet protect against:
 
 - Malware running on the unlocked machine.
-- A compromised clipboard.
-- A weak master password.
+- A compromised clipboard. Copied passwords are also never cleared from the
+  clipboard, so they stay there until something else overwrites them.
+- A weak master password, beyond the 12 character minimum.
 - Phishing or fake unlock screens.
+- Another local user account reading the database file. Permissions are set with
+  `chmod(0o600)`, which has no effect on Windows, the only supported platform.
+  The file contents stay encrypted regardless.
+- Recovering the master key from process memory. Python cannot reliably zero the
+  derived key, and it stays resident while the vault is unlocked.

@@ -1,0 +1,12 @@
+# LuxCipher runtime dependencies.
+#
+# Flet renames and removes control APIs between minor releases, so the range is
+# kept narrow on purpose: a wider one has already caused notifications to stop
+# rendering without any error.
+flet[desktop]~=0.86.5
+
+# Argon2id master key derivation.
+argon2-cffi~=25.1
+
+# SQLCipher bindings for the encrypted vault database.
+sqlcipher3-wheels~=0.5.7

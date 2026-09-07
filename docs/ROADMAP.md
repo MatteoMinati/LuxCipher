@@ -3,70 +3,75 @@
 This roadmap keeps the project small and teachable. Each step should be
 completed, reviewed, and tested before moving to the next one.
 
-## Step 1: Vault Shape
+## Step 1: Vault Shape — done
 
 - Start with a secure desktop password generator.
-- Define the decrypted vault model in `luxcipher/vault_model.py`.
-- Keep entry fields inside the future encrypted payload.
-- Keep only public crypto parameters outside the future ciphertext.
+- Define the shape of a stored credential.
 
-Suggested entry fields:
+An early version modelled the decrypted vault in memory in
+`luxcipher/vault_model.py` and planned to serialize it to an encrypted file.
+Steps 2 and 3 replaced that with SQLCipher, which owns both the storage format
+and the encryption, so the in-memory model was removed rather than left
+unreachable. It is still in the Git history if the file-format approach is ever
+revisited.
+
+A credential is now one row in the `accounts` table:
 
 - `id`
-- `title`
+- `service`
 - `username`
 - `password`
-- `url`
-- `notes`
-- `createdAt`
-- `updatedAt`
 
-Current model status:
+`title`, `url`, `notes` and the `createdAt` / `updatedAt` timestamps from the
+original sketch are not implemented yet.
 
-- `VaultEntry` stores one decrypted password record in memory.
-- `VaultData` stores the decrypted vault payload in memory.
-- Persistence and encryption are intentionally not implemented yet.
+## Step 2: Local Authentication And Key Derivation — done
 
-## Step 2: Local Authentication And Key Derivation
-
-- Create local-only account metadata.
 - Verify the master password without storing it.
-- Use a random salt per local account.
-- Store public KDF parameters and a verifier, not the master password.
-- Derive an encryption key from the master password before vault storage.
-- Use a random salt per vault if account authentication and vault encryption
-  need separate derivation contexts.
+- Use a random salt for key derivation.
+- Derive the vault encryption key from the master password.
 
-Current model status:
+Current status:
 
-- `LocalAccount` stores local account metadata.
-- `ScryptParameters` stores public KDF parameters.
-- `verify_master_password` checks a candidate password with constant-time
-  comparison.
-- `AccountStore` saves and loads local account metadata as JSON.
-- The desktop UI now shows first-run account creation and later login before
-  the password generator.
-- Vault encryption key derivation is intentionally not implemented yet.
+- `derive_master_key` derives a 32-byte key with Argon2id using the OWASP
+  parameters (time cost 3, 64 MiB, parallelism 4).
+- `get_or_create_salt` keeps a random 16-byte salt in `vault.salt`, next to the
+  database. It refuses to replace a corrupted salt, because regenerating one
+  would make an existing vault permanently undecryptable.
+- There is no separate password verifier. The master password is verified by
+  whether SQLCipher can decrypt page 1 of the database, so a wrong password is
+  indistinguishable from a database that was never readable with that key.
+- `normalize_username` and `is_master_password_strong_enough` enforce the
+  username format and the 12 character minimum at account creation.
+- The desktop UI shows first-run account creation and later login before the
+  vault.
 
-## Step 3: Local Encryption
+## Step 3: Local Encryption — done
 
 - Encrypt the vault before writing it to disk.
 - Authenticate ciphertext so tampering is detected.
-- Store only the encrypted vault payload and required public parameters.
 
-## Step 4: Basic Operations
+Current status:
 
-- Create a vault.
-- Unlock a vault.
-- Add an entry.
-- List entry titles.
-- Read one entry.
-- Update an entry.
-- Delete an entry.
+- `AccountStore` opens the database with `PRAGMA key`, so SQLCipher encrypts
+  every page with AES-256-CBC and authenticates it with per-page HMAC.
+- `secure_delete` and an in-memory temp store are enabled so plaintext is not
+  left in freed pages or spill files.
+- The username is stored in an encrypted `metadata` table, not in the clear.
+
+## Step 4: Basic Operations — partly done
+
+- Create a vault. — done
+- Unlock a vault. — done
+- Add an entry. — done
+- List and search entries. — done
+- Read one entry. — done
+- Update an entry. — not implemented.
+- Delete an entry. — not implemented.
 
 ## Step 5: Tests
 
-- Test round-trip encryption and decryption.
-- Test unlock failure with a wrong password.
+- Test unlock failure with a wrong password. — done
+- Test that the database is unreadable on disk. — done
+- Test CRUD behavior without real passwords. — pending update and delete.
 - Test corrupted vault detection.
-- Test CRUD behavior without real passwords.

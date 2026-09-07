@@ -1,0 +1,35 @@
+name: tests
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+jobs:
+  unittest:
+    # Windows only: desktop_app imports ctypes.wintypes, which does not exist
+    # on other platforms.
+    runs-on: windows-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # The declared floor and the version actually developed against.
+        python-version: ["3.11", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run tests
+        run: python -m unittest discover -s tests -v

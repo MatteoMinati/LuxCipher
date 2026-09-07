@@ -1,0 +1,124 @@
+name: release
+
+# Tagging v1.2.3 builds the app, wraps it in an installer, and publishes both
+# to a GitHub Release. Use the manual run (workflow_dispatch) to exercise the
+# build without creating a tag: it uploads the artifacts but publishes nothing.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      # flet build compiles a real Flutter application. Without this the
+      # packaged app would still download the Flet desktop client on first
+      # launch, which is wrong for an offline installer.
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: |
+          declared=$(python -c "import luxcipher; print(luxcipher.__version__)")
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            tagged="${GITHUB_REF_NAME#v}"
+            if [ "$tagged" != "$declared" ]; then
+              echo "::error::Tag ${GITHUB_REF_NAME} does not match __version__ ${declared} in luxcipher/__init__.py"
+              exit 1
+            fi
+            echo "value=$tagged" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=$declared" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Run tests
+        run: python -m unittest discover -s tests
+
+      - name: Build Windows app
+        run: flet build windows --module-name luxcipher --product LuxCipher --build-version ${{ steps.version.outputs.value }}
+
+      - name: Locate build output
+        id: build_output
+        shell: bash
+        run: |
+          # flet build writes to build/windows; fail loudly rather than
+          # packaging an empty directory if that ever changes.
+          if [ ! -d build/windows ]; then
+            echo "::error::Expected build/windows to exist. Contents of build/:"
+            ls -R build || true
+            exit 1
+          fi
+          ls -R build/windows | head -50
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Build installer
+        run: >
+          iscc packaging\luxcipher.iss
+          /DAppVersion=${{ steps.version.outputs.value }}
+          /DSourceDir=..\build\windows
+
+      - name: Checksums
+        shell: bash
+        run: |
+          cd dist
+          sha256sum *.exe > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: luxcipher-${{ steps.version.outputs.value }}
+          path: |
+            dist/*.exe
+            dist/SHA256SUMS.txt
+
+      - name: Publish release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: |
+            dist/*.exe
+            dist/SHA256SUMS.txt
+          body: |
+            ## LuxCipher ${{ steps.version.outputs.value }}
+
+            Scarica `LuxCipher-${{ steps.version.outputs.value }}-setup.exe`.
+
+            L'installer non richiede privilegi di amministratore e installa
+            in `%LOCALAPPDATA%\Programs\LuxCipher`.
+
+            ### Verifica del download
+
+            L'eseguibile non è firmato, quindi Windows SmartScreen mostrerà un
+            avviso. Prima di procedere, confronta l'impronta del file con
+            `SHA256SUMS.txt`:
+
+            ```
+            Get-FileHash .\LuxCipher-${{ steps.version.outputs.value }}-setup.exe -Algorithm SHA256
+            ```
+
+            ### Disinstallazione
+
+            Rimuove il programma e lascia intatte le password in
+            `%LOCALAPPDATA%\LuxCipher`.

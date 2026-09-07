@@ -1,5 +1,7 @@
 # LuxCipher
 
+[![tests](https://github.com/MatteoMinati/LuxCipher/actions/workflows/tests.yml/badge.svg)](https://github.com/MatteoMinati/LuxCipher/actions/workflows/tests.yml)
+
 Devilishly simple security for your passwords.
 
 LuxCipher is a password manager project built step by step, with security and
@@ -29,13 +31,34 @@ clarity as first-class goals.
   - `desktop_app.py` is the Flet user interface.
 - `docs/ROADMAP.md` tracks the incremental build plan.
 - `docs/SECURITY.md` collects security rules and decisions.
+- `docs/PACKAGING.md` explains how releases and the installer are built.
+- `packaging/luxcipher.iss` is the Inno Setup installer script.
+- `.github/workflows/` runs the tests on every push and builds the release.
 - `docs/IMPLEMENTATION_NOTES.md` explains implementation decisions locally and
   is intentionally ignored by Git.
 - `tools/build_implementation_notes_pdf.py` regenerates the implementation
   notes PDF locally under `output/pdf/`. It reads the untracked notes file, so
   it only works in a checkout that already has a local copy of it.
 
-## Run The Desktop App
+## Install
+
+Download the latest installer from the
+[Releases page](../../releases) and run it. It installs per-user into
+`%LOCALAPPDATA%\Programs\LuxCipher` and needs no administrator rights.
+
+The installer is not code signed, so Windows SmartScreen will warn you. Before
+running it, check the file against the `SHA256SUMS.txt` published with the
+release:
+
+```powershell
+Get-FileHash .\LuxCipher-<version>-setup.exe -Algorithm SHA256
+```
+
+Uninstalling removes the program and leaves your vault in
+`%LOCALAPPDATA%\LuxCipher` untouched, so reinstalling finds your passwords
+again.
+
+## Run From Source
 
 LuxCipher currently starts with a secure password generator desktop app.
 On first launch it creates a local account; later launches require the master

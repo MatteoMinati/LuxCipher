@@ -4,3 +4,8 @@
 # from docs/IMPLEMENTATION_NOTES.md. That file is intentionally untracked, so
 # the tool only works in a checkout that has a local copy of it.
 reportlab~=4.5
+
+# Provides the `flet` command used to package the Windows app. `flet build`
+# also needs the Flutter SDK and Visual Studio Build Tools, which pip cannot
+# install: see docs/PACKAGING.md.
+flet[cli]~=0.86.5

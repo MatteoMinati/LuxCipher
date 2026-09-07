@@ -80,7 +80,16 @@ Current status:
 - A backup stays encrypted under the master password in force when it was
   taken. Changing the master password afterwards does not re-key old backups.
 
-## Step 6: Tests
+## Step 6: Usability — auto-type done
+
+- Auto-type types the matching credential into the focused window on a global
+  hotkey, so passwords do not have to travel through the clipboard at all.
+  Disabled by default; the matching and refusal rules are in
+  `docs/SECURITY.md`.
+- Still missing, in rough order of value: TOTP codes and richer entry fields,
+  CSV import and export, reused-password detection.
+
+## Step 7: Tests
 
 - Test unlock failure with a wrong password. — done
 - Test that the database is unreadable on disk. — done

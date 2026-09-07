@@ -9,6 +9,9 @@ clarity as first-class goals.
 
 ## Features
 
+- Auto-type: press `Ctrl+Alt+L` on a login form and LuxCipher types the
+  credentials for you, matching the site by window title. Off by default; see
+  the warning below before turning it on.
 - Store, search, edit and delete credentials in an encrypted vault.
 - Generate strong passwords, with a strength meter based on estimated entropy.
 - Copy a username or password to the clipboard; it is erased 30 seconds later.
@@ -16,7 +19,24 @@ clarity as first-class goals.
 - Back up the vault and its salt together, in one click.
 - Automatic lock after 20 minutes of inactivity.
 
-Keyboard: `Esc` locks the vault, `Ctrl+F` jumps to the search box.
+Keyboard: `Esc` locks the vault, `Ctrl+F` jumps to the search box,
+`Ctrl+Alt+L` triggers auto-type.
+
+### Before enabling auto-type
+
+Auto-type identifies the target by the title of the focused window, and window
+titles can be set to anything. Two consequences worth understanding:
+
+- A malicious program can title its window "GitHub" and receive those
+  credentials. Only enable auto-type on a machine you trust.
+- If the focused field is not a login form, the password is typed into whatever
+  is focused, in plain sight. Make sure the cursor is in the username field
+  before pressing the hotkey.
+
+LuxCipher refuses to type when the vault is locked, when no credential clearly
+matches the window, when the window has no title, and when the focused window
+changed between the keypress and the typing. It is still off by default,
+because these are risks the user should choose to take rather than inherit.
 
 ## Project Goals
 

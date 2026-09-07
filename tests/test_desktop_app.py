@@ -485,6 +485,128 @@ class VaultManagementTests(unittest.TestCase):
         self.assertFalse(store.is_open())
 
 
+class AutoTypeIntegrationTests(unittest.TestCase):
+    """What the hotkey does, and more importantly when it refuses to do it."""
+
+    def _unlocked_app(self):
+        temp = TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        store = AccountStore(Path(temp.name) / "vault.db")
+        self.addCleanup(store.close)
+
+        page = MagicMock()
+        page.controls = []
+        app = LuxCipherFletApp(page=page, account_store=store)
+        self.addCleanup(setattr, app, "_running", False)
+        self.addCleanup(app._hotkey.stop)
+
+        app.auth_username_field.value = "test_user"
+        app.auth_password_field.value = "SuperPass123!"
+        app.auth_confirm_field.value = "SuperPass123!"
+        app._submit_auth()
+        store.add_account("GitHub", "octocat", "gh-secret")
+        return app, store, page
+
+    def test_types_the_credential_matching_the_focused_window(self) -> None:
+        app, store, page = self._unlocked_app()
+        app.autotype_enabled = True
+
+        with mock.patch.object(
+            desktop_app, "foreground_window", return_value=(1234, "Sign in to GitHub - Chrome")
+        ), mock.patch.object(desktop_app, "type_credential", return_value=True) as typed:
+            app._on_autotype_hotkey()
+
+        typed.assert_called_once_with("octocat", "gh-secret", 1234)
+
+    def test_refuses_when_autotype_is_disabled(self) -> None:
+        app, store, page = self._unlocked_app()
+        app.autotype_enabled = False
+
+        with mock.patch.object(
+            desktop_app, "foreground_window", return_value=(1234, "GitHub")
+        ), mock.patch.object(desktop_app, "type_credential") as typed:
+            app._on_autotype_hotkey()
+
+        typed.assert_not_called()
+
+    def test_refuses_when_the_vault_is_locked(self) -> None:
+        app, store, page = self._unlocked_app()
+        app.autotype_enabled = True
+        app._lock_vault()
+
+        with mock.patch.object(
+            desktop_app, "foreground_window", return_value=(1234, "GitHub")
+        ), mock.patch.object(desktop_app, "type_credential") as typed:
+            app._on_autotype_hotkey()
+
+        typed.assert_not_called()
+
+    def test_refuses_when_no_credential_matches(self) -> None:
+        app, store, page = self._unlocked_app()
+        app.autotype_enabled = True
+
+        with mock.patch.object(
+            desktop_app, "foreground_window", return_value=(1234, "Untitled - Notepad")
+        ), mock.patch.object(desktop_app, "type_credential") as typed:
+            app._on_autotype_hotkey()
+
+        typed.assert_not_called()
+
+    def test_refuses_to_type_into_its_own_window(self) -> None:
+        # The vault has no login form, and its search box would show a password
+        # in plain sight.
+        app, store, page = self._unlocked_app()
+        app.autotype_enabled = True
+        store.add_account(desktop_app.WINDOW_TITLE, "u", "p")
+
+        with mock.patch.object(
+            desktop_app, "foreground_window", return_value=(1234, desktop_app.WINDOW_TITLE)
+        ), mock.patch.object(desktop_app, "type_credential") as typed:
+            app._on_autotype_hotkey()
+
+        typed.assert_not_called()
+
+    def test_refuses_when_the_window_has_no_title(self) -> None:
+        app, store, page = self._unlocked_app()
+        app.autotype_enabled = True
+
+        for foreground in ((0, "GitHub"), (1234, ""), (1234, "   ")):
+            with self.subTest(foreground=foreground):
+                with mock.patch.object(
+                    desktop_app, "foreground_window", return_value=foreground
+                ), mock.patch.object(desktop_app, "type_credential") as typed:
+                    app._on_autotype_hotkey()
+                typed.assert_not_called()
+
+    def test_setting_is_persisted_and_reloaded(self) -> None:
+        app, store, page = self._unlocked_app()
+
+        with mock.patch.object(app._hotkey, "start", return_value=True):
+            app._set_autotype_enabled(True)
+        self.assertTrue(app.autotype_enabled)
+        self.assertEqual(store.get_setting("autotype_enabled"), "1")
+
+        # Locking forgets it in memory; unlocking reads it back.
+        app._lock_vault()
+        self.assertFalse(app.autotype_enabled)
+
+        app.auth_username_field.value = "test_user"
+        app.auth_password_field.value = "SuperPass123!"
+        with mock.patch.object(app._hotkey, "start", return_value=True):
+            app._submit_auth()
+        self.assertTrue(app.autotype_enabled)
+
+    def test_enabling_reports_a_hotkey_already_taken(self) -> None:
+        app, store, page = self._unlocked_app()
+
+        with mock.patch.object(app._hotkey, "start", return_value=False):
+            app._set_autotype_enabled(True)
+
+        # The switch must not claim to be on when the hotkey never registered.
+        self.assertFalse(app.autotype_enabled)
+
+
+
 if __name__ == "__main__":
     unittest.main()
 

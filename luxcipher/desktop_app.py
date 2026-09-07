@@ -14,6 +14,13 @@ from typing import Any
 import flet as ft
 
 from luxcipher.account_store import AccountStore, AccountStoreError
+from luxcipher.autotype import (
+    DEFAULT_HOTKEY_LABEL,
+    HotkeyListener,
+    foreground_window,
+    match_credential,
+    type_credential,
+)
 from luxcipher.auth import (
     MIN_MASTER_PASSWORD_LENGTH,
     derive_master_key,
@@ -31,6 +38,8 @@ from luxcipher.password_generator import (
 
 AUTO_LOCK_TIMEOUT_SECONDS = 20 * 60  # 20 minutes (1200 seconds)
 CLIPBOARD_CLEAR_SECONDS = 30
+WINDOW_TITLE = "LuxCipher — Secure Password Vault"
+AUTOTYPE_SETTING_KEY = "autotype_enabled"
 
 # Colors - Clean Minimal Dark Palette
 BG_ROOT = "#0C0D15"
@@ -187,6 +196,8 @@ class LuxCipherFletApp:
         # Kept so 'change master password' can check the current one without
         # a second trip through the database.
         self._current_key: bytes | None = None
+        self.autotype_enabled = False
+        self._hotkey = HotkeyListener(callback=self._on_autotype_hotkey)
 
         # Generator state
         self.gen_length = 20
@@ -324,7 +335,7 @@ class LuxCipherFletApp:
             pass
 
     def _configure_page(self) -> None:
-        self.page.title = "LuxCipher — Secure Password Vault"
+        self.page.title = WINDOW_TITLE
         self.page.theme_mode = ft.ThemeMode.DARK
         self.page.bgcolor = BG_ROOT
         self.page.padding = 0
@@ -411,6 +422,10 @@ class LuxCipherFletApp:
     def _close_window(self) -> None:
         self._running = False
         try:
+            self._hotkey.stop()
+        except Exception:
+            pass
+        try:
             self.account_store.close()
         except Exception:
             pass
@@ -429,7 +444,7 @@ class LuxCipherFletApp:
         except Exception:
             pass
         try:
-            hwnd = ctypes.windll.user32.FindWindowW(None, "LuxCipher — Secure Password Vault")
+            hwnd = ctypes.windll.user32.FindWindowW(None, WINDOW_TITLE)
             if hwnd:
                 WM_CLOSE = 0x0010
                 ctypes.windll.user32.PostMessageW(hwnd, WM_CLOSE, 0, 0)
@@ -710,6 +725,7 @@ class LuxCipherFletApp:
                 return
 
             self.current_username = username
+            self._load_autotype_setting()
             self._show_snackbar("Account creato e Vault inizializzato!")
             self.render()
 
@@ -736,6 +752,7 @@ class LuxCipherFletApp:
                 return
 
             self.current_username = username
+            self._load_autotype_setting()
             self.render()
 
     # --- VAULT UNLOCKED VIEW (CLEAN, MINIMAL & CENTERED) ---
@@ -1005,6 +1022,108 @@ class LuxCipherFletApp:
             )
             account_cards.append(card)
         return account_cards
+
+    # --- auto-type ---
+
+    def _load_autotype_setting(self) -> None:
+        """Read the stored preference and start the hotkey if it is enabled."""
+        try:
+            enabled = self.account_store.get_setting(AUTOTYPE_SETTING_KEY, "0") == "1"
+        except Exception:
+            enabled = False
+
+        self.autotype_enabled = enabled
+        if enabled:
+            self._hotkey.start()
+
+    def _set_autotype_enabled(self, enabled: bool) -> None:
+        self.record_activity()
+        self.autotype_enabled = bool(enabled)
+        try:
+            self.account_store.set_setting(AUTOTYPE_SETTING_KEY, "1" if enabled else "0")
+        except Exception as error:
+            self._show_snackbar(f"Impossibile salvare l'impostazione: {error}", is_error=True)
+            return
+
+        if not enabled:
+            self._hotkey.stop()
+            self._show_snackbar("Auto-type disattivato")
+            return
+
+        if self._hotkey.start():
+            self._show_snackbar(f"Auto-type attivo: premi {DEFAULT_HOTKEY_LABEL} su un login")
+        else:
+            self.autotype_enabled = False
+            self._show_snackbar(
+                f"{DEFAULT_HOTKEY_LABEL} e gia usato da un altro programma", is_error=True
+            )
+
+    def _on_autotype_hotkey(self) -> None:
+        """Type the credential matching the focused window. Runs on the hotkey thread.
+
+        Every early return here is a refusal to type. Typing a password into a
+        window that was not confidently identified is the one failure this
+        feature must never have, so anything ambiguous does nothing at all.
+        """
+        if not self.autotype_enabled or not self.account_store.is_open():
+            return
+
+        hwnd, title = foreground_window()
+        if not hwnd or not title:
+            return
+
+        # Never type into our own window: the vault is not a login form, and the
+        # search box would happily accept a password in plain sight.
+        if title.strip() == WINDOW_TITLE:
+            return
+
+        try:
+            match = match_credential(title, self.account_store.get_all_accounts())
+        except Exception:
+            return
+
+        if match is None:
+            return
+
+        self.record_activity()
+        type_credential(str(match[2] or ""), str(match[3] or ""), hwnd)
+
+    def _build_autotype_row(self) -> ft.Control:
+        return ft.Container(
+            bgcolor=BG_CARD,
+            border_radius=10,
+            border=make_border(BORDER_COLOR),
+            padding=make_padding(horizontal=12, vertical=6),
+            content=ft.Row(
+                alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                controls=[
+                    ft.Column(
+                        spacing=1,
+                        expand=True,
+                        controls=[
+                            ft.Text(
+                                "Auto-type",
+                                size=12,
+                                weight=ft.FontWeight.W_600,
+                                color=TEXT_WHITE,
+                            ),
+                            ft.Text(
+                                f"{DEFAULT_HOTKEY_LABEL} digita le credenziali nella "
+                                "finestra attiva, riconoscendola dal titolo",
+                                size=10,
+                                color=TEXT_SUBTLE,
+                            ),
+                        ],
+                    ),
+                    ft.Switch(
+                        value=self.autotype_enabled,
+                        active_color=PURPLE_PRIMARY,
+                        on_change=lambda e: self._set_autotype_enabled(e.control.value),
+                    ),
+                ],
+            ),
+        )
 
     def _card_action(self, icon: str, color: str, tooltip: str, on_click: Any) -> ft.Control:
         return ft.IconButton(
@@ -1425,6 +1544,7 @@ class LuxCipherFletApp:
                 horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
                 controls=[
                     add_form,
+                    self._build_autotype_row(),
                     self.search_field,
                     ft.Row(
                         alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
@@ -1783,10 +1903,12 @@ class LuxCipherFletApp:
             self._update_generator_ui()
 
     def _lock_vault(self) -> None:
+        self._hotkey.stop()
         self.account_store.close()
         self.auth_mode = "login"
         self.current_username = ""
         self._current_key = None
+        self.autotype_enabled = False
         self.revealed_ids.clear()
         self.render()
 

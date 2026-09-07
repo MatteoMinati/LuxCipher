@@ -84,6 +84,43 @@ None of this makes a weak master password safe: an attacker holding the database
 can guess offline, bounded only by Argon2id. A strong master password remains
 mandatory, and account creation enforces a 12 character minimum.
 
+## Auto-Type Decision
+
+Auto-type types a stored username and password into whatever window currently
+has focus, triggered by a global hotkey. It exists because the alternative,
+copying through the clipboard, is both slower and no safer.
+
+It is the only feature that deliberately sends a secret into a window LuxCipher
+does not own, so it is disabled by default and each of these rules refuses to
+type rather than guess:
+
+- the vault must be unlocked, and the feature explicitly enabled;
+- the focused window must have a title;
+- some stored service name must appear in that title, and names shorter than
+  three characters are never matched, because they match nearly anything;
+- when several services match, the longest and therefore most specific wins;
+- when several credentials tie, the most recently updated wins, which is a
+  guess but a contained one: they belong to the same service, so the worst case
+  is a failed login rather than a password sent to a stranger;
+- the focused window is re-checked immediately before typing, because the user
+  may have switched windows since pressing the hotkey;
+- LuxCipher never types into its own window.
+
+Two risks remain, and cannot be removed by better matching:
+
+- Window titles are chosen by the program that owns them. A hostile
+  application can title itself after a service in order to be handed those
+  credentials. Every title-based auto-type implementation shares this
+  weakness. The defence is that the machine must be trusted, which is already
+  a stated assumption of the threat model.
+- If the focused control is not a login field, the password is typed wherever
+  the caret happens to be, in plain text, and may end up in a chat message, a
+  search box, or a document. The Enter that follows may then submit it.
+
+Both are the user's risk to accept, which is why the feature is opt-in and why
+the interface and the README describe the failure modes rather than only the
+benefit.
+
 ## Early Threat Model
 
 LuxCipher should initially protect against:
@@ -101,6 +138,8 @@ LuxCipher does not yet protect against:
   sees the password, and clipboard history features may retain it regardless.
 - A weak master password, beyond the 12 character minimum.
 - Phishing or fake unlock screens.
+- A hostile local program naming its window after a stored service in order to
+  receive credentials through auto-type. See the auto-type section above.
 - Another local user account reading the database file. Permissions are set with
   `chmod(0o600)`, which has no effect on Windows, the only supported platform.
   The file contents stay encrypted regardless.

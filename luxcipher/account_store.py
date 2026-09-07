@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import os
 from pathlib import Path
 import shutil
+import threading
 from typing import Any
 
 from sqlcipher3 import dbapi2 as sqlite3
@@ -36,6 +37,10 @@ class AccountStore:
     def __init__(self, path: str | Path = VAULT_DB_FILE) -> None:
         self.path = Path(path)
         self.conn: sqlite3.Connection | None = None
+        # The auto-type hotkey runs on its own thread, and Flet dispatches
+        # event handlers from a pool, so the connection is shared across
+        # threads and every statement is serialised through this lock.
+        self._lock = threading.RLock()
 
     @classmethod
     def default(cls) -> "AccountStore":
@@ -61,7 +66,7 @@ class AccountStore:
         if self.path.parent and str(self.path.parent) != ".":
             self.path.parent.mkdir(parents=True, exist_ok=True)
 
-        conn = sqlite3.connect(str(self.path))
+        conn = sqlite3.connect(str(self.path), check_same_thread=False)
         try:
             cursor = conn.cursor()
             _apply_key(cursor, master_key)
@@ -88,99 +93,131 @@ class AccountStore:
             raise AccountStoreError("Database is not open.")
         return self.conn.cursor()
 
+    @property
+    def lock(self) -> threading.RLock:
+        """Held for the duration of any statement; re-entrant so callers can group."""
+        return self._lock
+
     def set_account_username(self, username: str) -> None:
         """Store the account username in the encrypted metadata table."""
-        if not isinstance(username, str):
-            raise TypeError("username must be a string.")
+        with self._lock:
+            if not isinstance(username, str):
+                raise TypeError("username must be a string.")
 
-        cursor = self._cursor()
-        cursor.execute(
-            "INSERT OR REPLACE INTO metadata (key, value) VALUES ('username', ?);",
-            (username,),
-        )
-        self.conn.commit()
+            cursor = self._cursor()
+            cursor.execute(
+                "INSERT OR REPLACE INTO metadata (key, value) VALUES ('username', ?);",
+                (username,),
+            )
+            self.conn.commit()
 
     def get_account_username(self) -> str | None:
         """Retrieve the account username from the encrypted metadata table."""
-        cursor = self._cursor()
-        cursor.execute("SELECT value FROM metadata WHERE key = 'username';")
-        row = cursor.fetchone()
-        return str(row[0]) if row else None
+        with self._lock:
+            cursor = self._cursor()
+            cursor.execute("SELECT value FROM metadata WHERE key = 'username';")
+            row = cursor.fetchone()
+            return str(row[0]) if row else None
+
+    def get_setting(self, key: str, default: str = "") -> str:
+        """Read one setting from the encrypted metadata table."""
+        with self._lock:
+            cursor = self._cursor()
+            cursor.execute("SELECT value FROM metadata WHERE key = ?;", (key,))
+            row = cursor.fetchone()
+            return str(row[0]) if row else default
+
+    def set_setting(self, key: str, value: str) -> None:
+        """Store one setting in the encrypted metadata table."""
+        with self._lock:
+            cursor = self._cursor()
+            cursor.execute(
+                "INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?);",
+                (key, str(value)),
+            )
+            self.conn.commit()
 
     def add_account(self, service: str, username: str, password: str) -> int:
         """Insert account credentials into the encrypted vault, returning the new id."""
-        _require_credential_fields(service, username, password)
+        with self._lock:
+            _require_credential_fields(service, username, password)
 
-        now = utc_now_text()
-        cursor = self._cursor()
-        cursor.execute(
-            """INSERT INTO accounts (service, username, password, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?);""",
-            (service, username, password, now, now),
-        )
-        self.conn.commit()
-        return int(cursor.lastrowid)
+            now = utc_now_text()
+            cursor = self._cursor()
+            cursor.execute(
+                """INSERT INTO accounts (service, username, password, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?);""",
+                (service, username, password, now, now),
+            )
+            self.conn.commit()
+            return int(cursor.lastrowid)
 
     def update_account(self, account_id: int, service: str, username: str, password: str) -> None:
         """Replace the fields of one credential and refresh its updated_at stamp."""
-        _require_credential_fields(service, username, password)
+        with self._lock:
+            _require_credential_fields(service, username, password)
 
-        cursor = self._cursor()
-        cursor.execute(
-            """UPDATE accounts
-               SET service = ?, username = ?, password = ?, updated_at = ?
-               WHERE id = ?;""",
-            (service, username, password, utc_now_text(), int(account_id)),
-        )
-        if cursor.rowcount == 0:
-            raise AccountStoreError(f"No credential with id {account_id}.")
-        self.conn.commit()
+            cursor = self._cursor()
+            cursor.execute(
+                """UPDATE accounts
+                   SET service = ?, username = ?, password = ?, updated_at = ?
+                   WHERE id = ?;""",
+                (service, username, password, utc_now_text(), int(account_id)),
+            )
+            if cursor.rowcount == 0:
+                raise AccountStoreError(f"No credential with id {account_id}.")
+            self.conn.commit()
 
     def delete_account(self, account_id: int) -> None:
         """Remove one credential permanently."""
-        cursor = self._cursor()
-        cursor.execute("DELETE FROM accounts WHERE id = ?;", (int(account_id),))
-        if cursor.rowcount == 0:
-            raise AccountStoreError(f"No credential with id {account_id}.")
-        self.conn.commit()
+        with self._lock:
+            cursor = self._cursor()
+            cursor.execute("DELETE FROM accounts WHERE id = ?;", (int(account_id),))
+            if cursor.rowcount == 0:
+                raise AccountStoreError(f"No credential with id {account_id}.")
+            self.conn.commit()
 
     def get_account(self, account_id: int) -> tuple[Any, ...] | None:
         """Return one credential row, or None when the id is unknown."""
-        cursor = self._cursor()
-        cursor.execute(f"SELECT {ACCOUNT_COLUMNS} FROM accounts WHERE id = ?;", (int(account_id),))
-        return cursor.fetchone()
+        with self._lock:
+            cursor = self._cursor()
+            cursor.execute(f"SELECT {ACCOUNT_COLUMNS} FROM accounts WHERE id = ?;", (int(account_id),))
+            return cursor.fetchone()
 
     def get_all_accounts(self) -> list[tuple[Any, ...]]:
         """Retrieve all credentials, ordered by service name."""
-        cursor = self._cursor()
-        cursor.execute(
-            f"SELECT {ACCOUNT_COLUMNS} FROM accounts ORDER BY service COLLATE NOCASE, username;"
-        )
-        return cursor.fetchall()
+        with self._lock:
+            cursor = self._cursor()
+            cursor.execute(
+                f"SELECT {ACCOUNT_COLUMNS} FROM accounts ORDER BY service COLLATE NOCASE, username;"
+            )
+            return cursor.fetchall()
 
     def search_accounts(self, query: str) -> list[tuple[Any, ...]]:
         """Search accounts by service name or username/email matching query."""
-        if not isinstance(query, str):
-            raise TypeError("query must be a string.")
+        with self._lock:
+            if not isinstance(query, str):
+                raise TypeError("query must be a string.")
 
-        term = query.strip()
-        if not term:
-            return self.get_all_accounts()
+            term = query.strip()
+            if not term:
+                return self.get_all_accounts()
 
-        pattern = f"%{_escape_like_wildcards(term)}%"
-        cursor = self._cursor()
-        cursor.execute(
-            f"""SELECT {ACCOUNT_COLUMNS} FROM accounts
-                WHERE service LIKE ? ESCAPE ? OR username LIKE ? ESCAPE ?
-                ORDER BY service COLLATE NOCASE, username;""",
-            (pattern, LIKE_ESCAPE_CHARACTER, pattern, LIKE_ESCAPE_CHARACTER),
-        )
-        return cursor.fetchall()
+            pattern = f"%{_escape_like_wildcards(term)}%"
+            cursor = self._cursor()
+            cursor.execute(
+                f"""SELECT {ACCOUNT_COLUMNS} FROM accounts
+                    WHERE service LIKE ? ESCAPE ? OR username LIKE ? ESCAPE ?
+                    ORDER BY service COLLATE NOCASE, username;""",
+                (pattern, LIKE_ESCAPE_CHARACTER, pattern, LIKE_ESCAPE_CHARACTER),
+            )
+            return cursor.fetchall()
 
     def count_accounts(self) -> int:
-        cursor = self._cursor()
-        cursor.execute("SELECT count(*) FROM accounts;")
-        return int(cursor.fetchone()[0])
+        with self._lock:
+            cursor = self._cursor()
+            cursor.execute("SELECT count(*) FROM accounts;")
+            return int(cursor.fetchone()[0])
 
     def change_master_key(self, new_key: bytes) -> None:
         """Re-encrypt the whole database under a new key.
@@ -188,13 +225,14 @@ class AccountStore:
         The Argon2id salt is unchanged: a new master password derives a new key
         from the same salt, so vault.salt stays valid and must still be kept.
         """
-        if not isinstance(new_key, (bytes, bytearray)):
-            raise TypeError("new_key must be bytes.")
-        if self.conn is None:
-            raise AccountStoreError("Database is not open.")
+        with self._lock:
+            if not isinstance(new_key, (bytes, bytearray)):
+                raise TypeError("new_key must be bytes.")
+            if self.conn is None:
+                raise AccountStoreError("Database is not open.")
 
-        self.conn.execute(f"PRAGMA rekey = \"x'{bytes(new_key).hex()}'\";")
-        self.conn.commit()
+            self.conn.execute(f"PRAGMA rekey = \"x'{bytes(new_key).hex()}'\";")
+            self.conn.commit()
 
     def backup_to(self, destination_dir: str | Path) -> Path:
         """Write a consistent copy of the vault and its salt into a new folder.
@@ -202,22 +240,23 @@ class AccountStore:
         Both files are needed to unlock a vault, so backing up only the database
         would produce something that can never be opened again.
         """
-        if self.conn is None:
-            raise AccountStoreError("Database is not open.")
+        with self._lock:
+            if self.conn is None:
+                raise AccountStoreError("Database is not open.")
 
-        destination = Path(destination_dir) / f"luxcipher-backup-{_timestamp_slug()}"
-        destination.mkdir(parents=True, exist_ok=False)
+            destination = Path(destination_dir) / f"luxcipher-backup-{_timestamp_slug()}"
+            destination.mkdir(parents=True, exist_ok=False)
 
-        db_copy = destination / VAULT_DB_FILE
-        # VACUUM INTO writes a consistent snapshot without closing the vault,
-        # and keeps it encrypted under the current key.
-        self.conn.execute("VACUUM INTO ?;", (str(db_copy),))
+            db_copy = destination / VAULT_DB_FILE
+            # VACUUM INTO writes a consistent snapshot without closing the vault,
+            # and keeps it encrypted under the current key.
+            self.conn.execute("VACUUM INTO ?;", (str(db_copy),))
 
-        if self.salt_path.is_file():
-            shutil.copy2(self.salt_path, destination / VAULT_SALT_FILE)
+            if self.salt_path.is_file():
+                shutil.copy2(self.salt_path, destination / VAULT_SALT_FILE)
 
-        _restrict_to_current_user(db_copy)
-        return destination
+            _restrict_to_current_user(db_copy)
+            return destination
 
     def close(self) -> None:
         """Close the database connection and release encryption context."""

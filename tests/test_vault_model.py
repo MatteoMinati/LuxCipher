@@ -9,7 +9,7 @@ class VaultModelTests(unittest.TestCase):
     def test_creates_entry_with_stable_identifier_and_timestamps(self) -> None:
         entry = VaultEntry.create(
             title="Email",
-            username="matteo@example.com",
+            username="user@example.com",
             password="correct horse battery staple",
             url="https://example.com",
             notes="Personal account",
@@ -17,7 +17,7 @@ class VaultModelTests(unittest.TestCase):
 
         UUID(entry.id)
         self.assertEqual(entry.title, "Email")
-        self.assertEqual(entry.username, "matteo@example.com")
+        self.assertEqual(entry.username, "user@example.com")
         self.assertEqual(entry.password, "correct horse battery staple")
         self.assertIsNotNone(entry.created_at.tzinfo)
         self.assertIsNotNone(entry.updated_at.tzinfo)
@@ -32,7 +32,7 @@ class VaultModelTests(unittest.TestCase):
     def test_entry_round_trips_through_dictionary(self) -> None:
         entry = VaultEntry.create(
             title="Email",
-            username="matteo@example.com",
+            username="user@example.com",
             password="secret",
         )
 

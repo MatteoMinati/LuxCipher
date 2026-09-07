@@ -23,12 +23,12 @@ def fast_kdf() -> ScryptParameters:
 class LocalAccountTests(unittest.TestCase):
     def test_creates_local_account_that_verifies_master_password(self) -> None:
         account = LocalAccount.create(
-            username=" matteo ",
+            username=" test_user ",
             master_password=MASTER_PASSWORD,
             kdf=fast_kdf(),
         )
 
-        self.assertEqual(account.username, "matteo")
+        self.assertEqual(account.username, "test_user")
         self.assertTrue(account.verify_master_password(MASTER_PASSWORD))
         self.assertFalse(account.verify_master_password("wrong password"))
         self.assertIsNotNone(account.created_at.tzinfo)
@@ -36,7 +36,7 @@ class LocalAccountTests(unittest.TestCase):
 
     def test_serialized_account_does_not_include_master_password(self) -> None:
         account = LocalAccount.create(
-            username="matteo",
+            username="test_user",
             master_password=MASTER_PASSWORD,
             kdf=fast_kdf(),
         )
@@ -49,7 +49,7 @@ class LocalAccountTests(unittest.TestCase):
 
     def test_account_round_trips_through_dictionary(self) -> None:
         account = LocalAccount.create(
-            username="matteo",
+            username="test_user",
             master_password=MASTER_PASSWORD,
             kdf=fast_kdf(),
         )
@@ -61,12 +61,12 @@ class LocalAccountTests(unittest.TestCase):
 
     def test_same_password_uses_different_salt_and_verifier(self) -> None:
         first = LocalAccount.create(
-            username="matteo",
+            username="test_user",
             master_password=MASTER_PASSWORD,
             kdf=fast_kdf(),
         )
         second = LocalAccount.create(
-            username="matteo",
+            username="test_user",
             master_password=MASTER_PASSWORD,
             kdf=fast_kdf(),
         )
@@ -77,14 +77,14 @@ class LocalAccountTests(unittest.TestCase):
     def test_rejects_weak_master_password(self) -> None:
         with self.assertRaises(ValueError):
             LocalAccount.create(
-                username="matteo",
+                username="test_user",
                 master_password="x" * (MIN_MASTER_PASSWORD_LENGTH - 1),
                 kdf=fast_kdf(),
             )
 
         with self.assertRaises(ValueError):
             LocalAccount.create(
-                username="matteo",
+                username="test_user",
                 master_password=" " * MIN_MASTER_PASSWORD_LENGTH,
                 kdf=fast_kdf(),
             )
@@ -99,14 +99,14 @@ class LocalAccountTests(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             LocalAccount.create(
-                username="matteo@example.com",
+                username="test_user@example.com",
                 master_password=MASTER_PASSWORD,
                 kdf=fast_kdf(),
             )
 
     def test_rejects_unsupported_account_schema_version(self) -> None:
         account = LocalAccount.create(
-            username="matteo",
+            username="test_user",
             master_password=MASTER_PASSWORD,
             kdf=fast_kdf(),
         )

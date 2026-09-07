@@ -38,11 +38,11 @@ class DesktopAppTests(unittest.TestCase):
             self.assertFalse(store.is_open())
 
             # Create account with username
-            app.auth_username_field.value = "matteo"
+            app.auth_username_field.value = "test_user"
             app._submit_auth()
             self.assertTrue(store.is_open())
-            self.assertEqual(app.current_username, "matteo")
-            self.assertEqual(store.get_account_username(), "matteo")
+            self.assertEqual(app.current_username, "test_user")
+            self.assertEqual(store.get_account_username(), "test_user")
 
             # Add an account
             app.new_service_field.value = "GitHub"
@@ -57,7 +57,7 @@ class DesktopAppTests(unittest.TestCase):
             self.assertEqual(app.auth_mode, "login")
 
             # Try login with wrong password
-            app.auth_username_field.value = "matteo"
+            app.auth_username_field.value = "test_user"
             app.auth_password_field.value = "WrongPass123!"
             app._submit_auth()
             self.assertFalse(store.is_open())
@@ -69,11 +69,11 @@ class DesktopAppTests(unittest.TestCase):
             self.assertFalse(store.is_open())
 
             # Login with correct credentials
-            app.auth_username_field.value = "matteo"
+            app.auth_username_field.value = "test_user"
             app.auth_password_field.value = "SuperPass123!"
             app._submit_auth()
             self.assertTrue(store.is_open())
-            self.assertEqual(app.current_username, "matteo")
+            self.assertEqual(app.current_username, "test_user")
 
             store.close()
 
@@ -92,7 +92,7 @@ class DesktopAppTests(unittest.TestCase):
             app = LuxCipherFletApp(page=mock_page, account_store=store, auto_lock_timeout=0.01)
 
             # Setup account and open vault
-            app.auth_username_field.value = "matteo"
+            app.auth_username_field.value = "test_user"
             app.auth_password_field.value = "SuperPass123!"
             app.auth_confirm_field.value = "SuperPass123!"
             app._submit_auth()
@@ -124,19 +124,19 @@ class DesktopAppTests(unittest.TestCase):
             app = LuxCipherFletApp(page=mock_page, account_store=store)
 
             # Setup account and open vault
-            app.auth_username_field.value = "matteo"
+            app.auth_username_field.value = "test_user"
             app.auth_password_field.value = "SuperPass123!"
             app.auth_confirm_field.value = "SuperPass123!"
             app._submit_auth()
 
             # Add two accounts
             app.new_service_field.value = "GitHub"
-            app.new_user_field.value = "octocat@github.com"
+            app.new_user_field.value = "octocat@example.org"
             app.new_pwd_field.value = "pass1"
             app._add_account_entry()
 
             app.new_service_field.value = "Google"
-            app.new_user_field.value = "user@gmail.com"
+            app.new_user_field.value = "user@example.com"
             app.new_pwd_field.value = "pass2"
             app._add_account_entry()
 

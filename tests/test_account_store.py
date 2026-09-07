@@ -21,12 +21,12 @@ class AccountStoreTests(unittest.TestCase):
             self.assertTrue(store.exists())
 
             store.add_account("GitHub", "octocat", "super_secret_github_token")
-            store.add_account("Google", "user@gmail.com", "google_pass_123")
+            store.add_account("Google", "user@example.com", "google_pass_123")
 
             accounts = store.get_all_accounts()
             self.assertEqual(len(accounts), 2)
             self.assertEqual(accounts[0][1:], ("GitHub", "octocat", "super_secret_github_token"))
-            self.assertEqual(accounts[1][1:], ("Google", "user@gmail.com", "google_pass_123"))
+            self.assertEqual(accounts[1][1:], ("Google", "user@example.com", "google_pass_123"))
 
             store.close()
             self.assertFalse(store.is_open())
@@ -92,7 +92,7 @@ class AccountStoreTests(unittest.TestCase):
             store.get_all_accounts()
 
         with self.assertRaises(AccountStoreError):
-            store.set_account_username("matteo")
+            store.set_account_username("test_user")
 
         with self.assertRaises(AccountStoreError):
             store.get_account_username()
@@ -107,12 +107,12 @@ class AccountStoreTests(unittest.TestCase):
                 store.open(key)
                 self.assertIsNone(store.get_account_username())
 
-                store.set_account_username("matteominati")
-                self.assertEqual(store.get_account_username(), "matteominati")
+                store.set_account_username("vault_owner")
+                self.assertEqual(store.get_account_username(), "vault_owner")
 
             with AccountStore(db_path) as store:
                 store.open(key)
-                self.assertEqual(store.get_account_username(), "matteominati")
+                self.assertEqual(store.get_account_username(), "vault_owner")
 
     def test_search_accounts(self) -> None:
         with TemporaryDirectory() as directory:
@@ -122,9 +122,9 @@ class AccountStoreTests(unittest.TestCase):
 
             with AccountStore(db_path) as store:
                 store.open(key)
-                store.add_account("GitHub", "octocat@github.com", "gh_pass")
-                store.add_account("Google", "matteo@gmail.com", "google_pass")
-                store.add_account("Netflix", "matteo@netflix.com", "netflix_pass")
+                store.add_account("GitHub", "octocat@example.org", "gh_pass")
+                store.add_account("Google", "alice@example.com", "google_pass")
+                store.add_account("Netflix", "alice@example.net", "netflix_pass")
 
                 # Search by service name
                 res_gh = store.search_accounts("git")
@@ -132,8 +132,8 @@ class AccountStoreTests(unittest.TestCase):
                 self.assertEqual(res_gh[0][1], "GitHub")
 
                 # Search by username / email
-                res_matteo = store.search_accounts("matteo")
-                self.assertEqual(len(res_matteo), 2)
+                res_alice = store.search_accounts("alice")
+                self.assertEqual(len(res_alice), 2)
 
                 # Search with empty query returns all
                 res_all = store.search_accounts("")

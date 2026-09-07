@@ -10,6 +10,10 @@
 *.pem
 *.p12
 *.pfx
+*.salt
+*.db
+*.sqlite
+*.sqlite3
 secrets/
 vaults/
 .luxcipher/

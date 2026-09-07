@@ -165,6 +165,20 @@ class Argon2MasterKeyTests(unittest.TestCase):
             salt2 = get_or_create_salt(salt_file)
             self.assertEqual(salt1, salt2)
 
+    def test_get_or_create_salt_refuses_to_replace_a_corrupted_salt(self) -> None:
+        # Regression: a truncated salt file used to be silently regenerated,
+        # which made an existing vault permanently undecryptable.
+        with TemporaryDirectory() as directory:
+            salt_file = Path(directory) / "vault.salt"
+            original = get_or_create_salt(salt_file)
+            truncated = original[:8]
+            salt_file.write_bytes(truncated)
+
+            with self.assertRaises(ValueError):
+                get_or_create_salt(salt_file)
+
+            self.assertEqual(salt_file.read_bytes(), truncated)
+
     def test_derive_master_key_returns_32_bytes_consistently(self) -> None:
         salt = b"\x01" * 16
         key1 = derive_master_key("my_secure_password", salt=salt)

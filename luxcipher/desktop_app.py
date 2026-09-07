@@ -14,7 +14,12 @@ from typing import Any
 import flet as ft
 
 from luxcipher.account_store import AccountStore, AccountStoreError
-from luxcipher.auth import derive_master_key
+from luxcipher.auth import (
+    MIN_MASTER_PASSWORD_LENGTH,
+    derive_master_key,
+    is_master_password_strong_enough,
+    normalize_username,
+)
 from luxcipher.password_generator import (
     MAX_PASSWORD_LENGTH,
     MIN_PASSWORD_LENGTH,
@@ -193,7 +198,7 @@ class LuxCipherFletApp:
                 if self.account_store.is_open():
                     elapsed = time.time() - self.last_activity_time
                     if elapsed >= self.auto_lock_timeout:
-                        self._trigger_auto_lock()
+                        self._dispatch_to_ui(self._trigger_auto_lock)
 
         self._timer_thread = threading.Thread(
             target=_timer_loop,
@@ -201,6 +206,13 @@ class LuxCipherFletApp:
             name="LuxCipherInactivityTimer",
         )
         self._timer_thread.start()
+
+    def _dispatch_to_ui(self, callback: Any) -> None:
+        """Hand callback to Flet's executor: page controls are not thread-safe."""
+        try:
+            self.page.run_thread(callback)
+        except Exception:
+            callback()
 
     def record_activity(self) -> None:
         """Update timestamp on any user interaction to prevent timeout."""
@@ -331,14 +343,16 @@ class LuxCipherFletApp:
         os._exit(0)
 
     def _show_snackbar(self, message: str, is_error: bool = False) -> None:
+        # Flet dropped page.snack_bar: assigning it creates a plain attribute that
+        # is never rendered, which silently hid every error message from the user.
         try:
-            self.page.snack_bar = ft.SnackBar(
-                content=ft.Text(message, color=TEXT_WHITE, weight=ft.FontWeight.W_500),
-                bgcolor=ROSE_DANGER if is_error else EMERALD_ACCENT,
-                duration=3000,
+            self.page.show_dialog(
+                ft.SnackBar(
+                    content=ft.Text(message, color=TEXT_WHITE, weight=ft.FontWeight.W_500),
+                    bgcolor=ROSE_DANGER if is_error else EMERALD_ACCENT,
+                    duration=3000,
+                )
             )
-            self.page.snack_bar.open = True
-            self.page.update()
         except Exception:
             pass
 
@@ -547,6 +561,23 @@ class LuxCipherFletApp:
             confirm = self.auth_confirm_field.value if self.auth_confirm_field.value else ""
             if password != confirm:
                 self._show_snackbar("Le master password non coincidono", is_error=True)
+                return
+
+            try:
+                username = normalize_username(username)
+            except ValueError:
+                self._show_snackbar(
+                    "Il nome utente deve avere 3-64 caratteri e contenere solo "
+                    "lettere, numeri, '.', '_' o '-'",
+                    is_error=True,
+                )
+                return
+
+            if not is_master_password_strong_enough(password):
+                self._show_snackbar(
+                    f"La master password deve avere almeno {MIN_MASTER_PASSWORD_LENGTH} caratteri",
+                    is_error=True,
+                )
                 return
 
             try:

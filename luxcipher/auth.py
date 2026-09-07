@@ -64,8 +64,16 @@ def get_or_create_salt(salt_path: str | Path | None = None) -> bytes:
     path = Path(salt_path) if salt_path is not None else default_salt_path()
     if path.is_file():
         salt = path.read_bytes()
-        if len(salt) == SALT_BYTES:
-            return salt
+        if len(salt) != SALT_BYTES:
+            # Regenerating here would derive a different master key and leave any
+            # existing vault permanently undecryptable, reported only as a wrong
+            # master password. Refuse instead and let the user decide.
+            raise ValueError(
+                f"Salt file {path} is corrupted: expected {SALT_BYTES} bytes, "
+                f"found {len(salt)}. The vault cannot be unlocked without the "
+                "original salt. Delete this file only if no vault exists yet."
+            )
+        return salt
 
     salt = secrets.token_bytes(SALT_BYTES)
     if path.parent and str(path.parent) != ".":
@@ -98,6 +106,20 @@ def derive_master_key(
         type=argon2.low_level.Type.ID,
     )
 
+
+
+def normalize_username(username: str) -> str:
+    """Return the trimmed username, raising ValueError if it fails USERNAME_PATTERN."""
+    return _normalize_username(username)
+
+
+def is_master_password_strong_enough(master_password: str) -> bool:
+    """Return True when the master password meets the minimum strength policy."""
+    return (
+        isinstance(master_password, str)
+        and bool(master_password.strip())
+        and len(master_password) >= MIN_MASTER_PASSWORD_LENGTH
+    )
 
 
 @dataclass(frozen=True)

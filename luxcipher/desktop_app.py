@@ -6,14 +6,13 @@ import ctypes
 import ctypes.wintypes as wt
 import os
 from pathlib import Path
-import sys
 import threading
 import time
 from typing import Any
 
 import flet as ft
 
-from luxcipher.account_store import AccountStore, AccountStoreError
+from luxcipher.account_store import AccountStore
 from luxcipher.auth import (
     MIN_MASTER_PASSWORD_LENGTH,
     derive_master_key,
@@ -1238,11 +1237,16 @@ class LuxCipherFletApp:
 
     def _toggle_gen_opt(self, opt_name: str, val: bool) -> None:
         self.record_activity()
-        if opt_name == "lower": self.gen_lowercase = val
-        elif opt_name == "upper": self.gen_uppercase = val
-        elif opt_name == "digits": self.gen_digits = val
-        elif opt_name == "symbols": self.gen_symbols = val
-        elif opt_name == "ambiguous": self.gen_no_ambiguous = val
+        if opt_name == "lower":
+            self.gen_lowercase = val
+        elif opt_name == "upper":
+            self.gen_uppercase = val
+        elif opt_name == "digits":
+            self.gen_digits = val
+        elif opt_name == "symbols":
+            self.gen_symbols = val
+        elif opt_name == "ambiguous":
+            self.gen_no_ambiguous = val
         self._update_generator_ui()
 
     def _generate_pwd(self, update_ui: bool = False) -> None:
@@ -1275,7 +1279,7 @@ LuxCipherApp = LuxCipherFletApp
 
 
 def main() -> None:
-    ft.app(target=lambda page: LuxCipherFletApp(page))
+    ft.run(lambda page: LuxCipherFletApp(page))
 
 
 if __name__ == "__main__":

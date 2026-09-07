@@ -323,6 +323,168 @@ class DesktopAppTests(unittest.TestCase):
         app._running = False
 
 
+class VaultManagementTests(unittest.TestCase):
+    """Exercises the credential management paths through a mock page."""
+
+    def _unlocked_app(self, **kwargs):
+        """Create an unlocked vault in a temp directory that cleans itself up.
+
+        Cleanups run last-registered-first, so the directory is registered
+        before the connection: on Windows the database file cannot be deleted
+        while it is still open.
+        """
+        temp = TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        directory = Path(temp.name)
+
+        store = AccountStore(directory / "vault.db")
+        self.addCleanup(store.close)
+
+        page = MagicMock()
+        page.controls = []
+        app = LuxCipherFletApp(page=page, account_store=store, **kwargs)
+        self.addCleanup(setattr, app, "_running", False)
+
+        app.auth_username_field.value = "test_user"
+        app.auth_password_field.value = "SuperPass123!"
+        app.auth_confirm_field.value = "SuperPass123!"
+        app._submit_auth()
+        self.assertTrue(store.is_open())
+        return app, store, page, directory
+
+    @staticmethod
+    def _last_dialog(page):
+        return page.show_dialog.call_args.args[0]
+
+    @staticmethod
+    def _action(dialog, label):
+        # Flet stores a button's label in `content`, not `text`.
+        for control in dialog.actions:
+            if getattr(control, "content", None) == label:
+                return control
+        raise AssertionError(f"No action labelled {label}")
+
+    def test_edit_dialog_saves_changes(self) -> None:
+        app, store, page, directory = self._unlocked_app()
+        account_id = store.add_account("GitHub", "octocat", "old_token")
+
+        app._open_edit_dialog(account_id)
+        dialog = self._last_dialog(page)
+        service, username, password = dialog.content.controls[:3]
+        self.assertEqual(service.value, "GitHub")
+        self.assertEqual(password.value, "old_token")
+
+        service.value = "GitHub Enterprise"
+        password.value = "new_token"
+        self._action(dialog, "Salva").on_click(None)
+
+        self.assertEqual(store.get_account(account_id)[1:4],
+                         ("GitHub Enterprise", "octocat", "new_token"))
+
+    def test_edit_dialog_rejects_an_empty_service(self) -> None:
+        app, store, page, directory = self._unlocked_app()
+        account_id = store.add_account("GitHub", "octocat", "token")
+
+        app._open_edit_dialog(account_id)
+        dialog = self._last_dialog(page)
+        dialog.content.controls[0].value = "   "
+        self._action(dialog, "Salva").on_click(None)
+
+        # Unchanged, and the dialog was not dismissed.
+        self.assertEqual(store.get_account(account_id)[1], "GitHub")
+
+    def test_delete_only_happens_after_confirmation(self) -> None:
+        app, store, page, directory = self._unlocked_app()
+        account_id = store.add_account("GitHub", "octocat", "token")
+
+        app._confirm_delete(account_id, "GitHub")
+        self.assertEqual(store.count_accounts(), 1)
+
+        dialog = self._last_dialog(page)
+        self._action(dialog, "Elimina").on_click(None)
+        self.assertEqual(store.count_accounts(), 0)
+
+    def test_reveal_is_per_credential_and_clears_on_lock(self) -> None:
+        app, store, page, directory = self._unlocked_app()
+        first = store.add_account("GitHub", "octocat", "token")
+        second = store.add_account("Amazon", "buyer", "other")
+
+        app._toggle_revealed(first)
+        self.assertIn(first, app.revealed_ids)
+        self.assertNotIn(second, app.revealed_ids)
+
+        app._toggle_revealed(first)
+        self.assertNotIn(first, app.revealed_ids)
+
+        app._toggle_revealed(second)
+        app._lock_vault()
+        self.assertEqual(app.revealed_ids, set())
+        self.assertIsNone(app._current_key)
+
+    def test_change_master_password_rekeys_the_vault(self) -> None:
+        app, store, page, directory = self._unlocked_app()
+        store.add_account("GitHub", "octocat", "token")
+
+        app._open_change_master_password()
+        dialog = self._last_dialog(page)
+        current, new, confirm = dialog.content.controls[1:4]
+
+        # Wrong current password changes nothing.
+        current.value = "WrongCurrent123!"
+        new.value = "BrandNewMaster123!"
+        confirm.value = "BrandNewMaster123!"
+        self._action(dialog, "Cambia").on_click(None)
+        old_key = app._current_key
+
+        # Mismatched confirmation changes nothing.
+        current.value = "SuperPass123!"
+        confirm.value = "SomethingElse123!"
+        self._action(dialog, "Cambia").on_click(None)
+        self.assertEqual(app._current_key, old_key)
+
+        # Too short changes nothing.
+        confirm.value = new.value = "short"
+        self._action(dialog, "Cambia").on_click(None)
+        self.assertEqual(app._current_key, old_key)
+
+        # Correct input rekeys.
+        new.value = confirm.value = "BrandNewMaster123!"
+        self._action(dialog, "Cambia").on_click(None)
+        self.assertNotEqual(app._current_key, old_key)
+
+        new_key = app._current_key
+
+        with self.assertRaises(ValueError):
+            AccountStore(Path(directory) / "vault.db").open(old_key)
+        reopened = AccountStore(Path(directory) / "vault.db")
+        reopened.open(new_key)
+        self.assertEqual(reopened.count_accounts(), 1)
+        reopened.close()
+
+    def test_backup_writes_both_files(self) -> None:
+        app, store, page, directory = self._unlocked_app()
+        store.add_account("GitHub", "octocat", "token")
+
+        destination = Path(directory) / "backups"
+        with mock.patch.object(desktop_app, "default_backup_dir", return_value=destination):
+            app._create_backup()
+
+        folders = list(destination.iterdir())
+        self.assertEqual(len(folders), 1)
+        self.assertTrue((folders[0] / "vault.db").is_file())
+        self.assertTrue((folders[0] / "vault.salt").is_file())
+
+    def test_escape_locks_the_vault(self) -> None:
+        app, store, page, directory = self._unlocked_app()
+
+        event = MagicMock()
+        event.key = "Escape"
+        event.ctrl = False
+        app._on_keyboard(event)
+
+        self.assertFalse(store.is_open())
+
+
 if __name__ == "__main__":
     unittest.main()
 

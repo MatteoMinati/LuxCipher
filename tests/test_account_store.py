@@ -25,8 +25,8 @@ class AccountStoreTests(unittest.TestCase):
 
             accounts = store.get_all_accounts()
             self.assertEqual(len(accounts), 2)
-            self.assertEqual(accounts[0][1:], ("GitHub", "octocat", "super_secret_github_token"))
-            self.assertEqual(accounts[1][1:], ("Google", "user@example.com", "google_pass_123"))
+            self.assertEqual(accounts[0][1:4], ("GitHub", "octocat", "super_secret_github_token"))
+            self.assertEqual(accounts[1][1:4], ("Google", "user@example.com", "google_pass_123"))
 
             store.close()
             self.assertFalse(store.is_open())
@@ -45,7 +45,7 @@ class AccountStoreTests(unittest.TestCase):
                 store.open(key)
                 accounts = store.get_all_accounts()
                 self.assertEqual(len(accounts), 1)
-                self.assertEqual(accounts[0][1:], ("ProtonMail", "contact@luxcipher.org", "proton_secret"))
+                self.assertEqual(accounts[0][1:4], ("ProtonMail", "contact@luxcipher.org", "proton_secret"))
 
     def test_open_with_wrong_key_raises_value_error(self) -> None:
         with TemporaryDirectory() as directory:
@@ -162,6 +162,140 @@ class AccountStoreTests(unittest.TestCase):
                 self.assertEqual(len(store.search_accounts("_")), 1)
                 self.assertEqual(len(store.search_accounts("net")), 1)
                 self.assertEqual(len(store.search_accounts("%%%")), 0)
+
+    def test_update_and_delete_a_credential(self) -> None:
+        with TemporaryDirectory() as directory:
+            db_path = Path(directory) / "vault.db"
+            salt = b"\x80" * 16
+            key = derive_master_key("CrudTestPassword1!", salt=salt)
+
+            with AccountStore(db_path) as store:
+                store.open(key)
+                account_id = store.add_account("GitHub", "octocat", "old_token")
+                other_id = store.add_account("Amazon", "buyer", "other")
+
+                store.update_account(account_id, "GitHub Enterprise", "octocat", "new_token")
+                row = store.get_account(account_id)
+                self.assertEqual(row[1:4], ("GitHub Enterprise", "octocat", "new_token"))
+
+                store.delete_account(account_id)
+                self.assertIsNone(store.get_account(account_id))
+                self.assertEqual(store.count_accounts(), 1)
+                self.assertIsNotNone(store.get_account(other_id))
+
+                with self.assertRaises(AccountStoreError):
+                    store.update_account(account_id, "Gone", "x", "y")
+                with self.assertRaises(AccountStoreError):
+                    store.delete_account(account_id)
+
+    def test_credentials_carry_timestamps(self) -> None:
+        with TemporaryDirectory() as directory:
+            db_path = Path(directory) / "vault.db"
+            salt = b"\x90" * 16
+            key = derive_master_key("TimestampPassword1!", salt=salt)
+
+            with AccountStore(db_path) as store:
+                store.open(key)
+                account_id = store.add_account("GitHub", "octocat", "token")
+                created, updated = store.get_account(account_id)[4:6]
+                self.assertTrue(created)
+                self.assertEqual(created, updated)
+                self.assertTrue(created.endswith("Z"))
+
+    def test_rejects_empty_service_or_password(self) -> None:
+        with TemporaryDirectory() as directory:
+            db_path = Path(directory) / "vault.db"
+            key = derive_master_key("EmptyFieldPass1!", salt=b"\xa0" * 16)
+
+            with AccountStore(db_path) as store:
+                store.open(key)
+                with self.assertRaises(ValueError):
+                    store.add_account("   ", "user", "pass")
+                with self.assertRaises(ValueError):
+                    store.add_account("Service", "user", "")
+                # A blank username is allowed: not every credential has one.
+                self.assertIsNotNone(store.add_account("Service", "", "pass"))
+
+    def test_change_master_key_reencrypts_the_vault(self) -> None:
+        with TemporaryDirectory() as directory:
+            db_path = Path(directory) / "vault.db"
+            salt = b"\xb0" * 16
+            old_key = derive_master_key("OriginalMasterPass1!", salt=salt)
+            new_key = derive_master_key("ReplacementMasterPass1!", salt=salt)
+
+            with AccountStore(db_path) as store:
+                store.open(old_key)
+                store.add_account("GitHub", "octocat", "token")
+                store.change_master_key(new_key)
+
+            # The old key no longer opens it, the new one does, data intact.
+            with self.assertRaises(ValueError):
+                AccountStore(db_path).open(old_key)
+
+            with AccountStore(db_path) as store:
+                store.open(new_key)
+                self.assertEqual(store.count_accounts(), 1)
+                self.assertEqual(store.get_all_accounts()[0][1], "GitHub")
+
+    def test_backup_copies_both_database_and_salt(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            db_path = root / "vault.db"
+            salt = b"\xc0" * 16
+            (root / "vault.salt").write_bytes(salt)
+            key = derive_master_key("BackupTestPassword1!", salt=salt)
+
+            with AccountStore(db_path) as store:
+                store.open(key)
+                store.add_account("GitHub", "octocat", "token")
+                backup = store.backup_to(root / "backups")
+
+            # A database without its salt could never be opened again.
+            self.assertTrue((backup / "vault.db").is_file())
+            self.assertTrue((backup / "vault.salt").is_file())
+            self.assertEqual((backup / "vault.salt").read_bytes(), salt)
+
+            with AccountStore(backup / "vault.db") as restored:
+                restored.open(key)
+                self.assertEqual(restored.get_all_accounts()[0][1:4], ("GitHub", "octocat", "token"))
+
+    def test_opens_and_migrates_a_schema_v1_vault(self) -> None:
+        from sqlcipher3 import dbapi2 as sqlcipher
+
+        with TemporaryDirectory() as directory:
+            db_path = Path(directory) / "vault.db"
+            key = derive_master_key("LegacyVaultPassword1!", salt=b"\xd0" * 16)
+
+            # Build a vault the way version 1 wrote them: no timestamp columns.
+            legacy = sqlcipher.connect(str(db_path))
+            cursor = legacy.cursor()
+            cursor.execute("PRAGMA key = \"x'%s'\";" % key.hex())
+            cursor.execute("CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);")
+            cursor.execute(
+                """CREATE TABLE accounts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    service TEXT NOT NULL,
+                    username TEXT NOT NULL,
+                    password TEXT NOT NULL
+                );"""
+            )
+            cursor.execute(
+                "INSERT INTO accounts (service, username, password) VALUES ('Legacy', 'u', 's');"
+            )
+            cursor.execute("INSERT INTO metadata VALUES ('username', 'test_user');")
+            legacy.commit()
+            legacy.close()
+
+            with AccountStore(db_path) as store:
+                store.open(key)
+                self.assertEqual(store.get_account_username(), "test_user")
+                row = store.get_all_accounts()[0]
+                self.assertEqual(row[1:4], ("Legacy", "u", "s"))
+                # Migrated rows have empty stamps rather than invented ones.
+                self.assertEqual(row[4], "")
+
+                store.update_account(row[0], "Legacy", "u", "rotated")
+                self.assertTrue(store.get_account(row[0])[5])
 
 
 if __name__ == "__main__":

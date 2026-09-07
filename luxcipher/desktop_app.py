@@ -13,10 +13,11 @@ from typing import Any
 
 import flet as ft
 
-from luxcipher.account_store import AccountStore
+from luxcipher.account_store import AccountStore, AccountStoreError
 from luxcipher.auth import (
     MIN_MASTER_PASSWORD_LENGTH,
     derive_master_key,
+    get_or_create_salt,
     is_master_password_strong_enough,
     normalize_username,
 )
@@ -47,6 +48,13 @@ TEXT_WHITE = "#F8FAFC"
 TEXT_MUTED = "#94A3B8"
 TEXT_SUBTLE = "#64748B"
 BTN_DARK = "#1E2138"
+
+
+def default_backup_dir() -> Path:
+    """Backups go under the Documents folder, where the user can find them."""
+    profile = os.environ.get("USERPROFILE")
+    base = Path(profile) if profile else Path.home()
+    return base / "Documents" / "LuxCipher Backups"
 
 
 def make_padding(horizontal: int = 0, vertical: int = 0) -> ft.Padding:
@@ -175,6 +183,10 @@ class LuxCipherFletApp:
         self.auth_mode = "setup" if not self.account_store.exists() else "login"
         self.active_tab = "vault"  # "vault" or "generator"
         self.show_passwords_in_table = False
+        self.revealed_ids: set[int] = set()
+        # Kept so 'change master password' can check the current one without
+        # a second trip through the database.
+        self._current_key: bytes | None = None
 
         # Generator state
         self.gen_length = 20
@@ -268,6 +280,28 @@ class LuxCipherFletApp:
         )
         self._timer_thread.start()
 
+    def _on_keyboard(self, e: Any) -> None:
+        """Every keypress counts as activity; a few also do something."""
+        self.record_activity()
+        if not self.account_store.is_open():
+            return
+
+        key = getattr(e, "key", "") or ""
+        ctrl = bool(getattr(e, "ctrl", False))
+
+        if key == "Escape":
+            self._lock_vault()
+        elif ctrl and key.lower() == "f":
+            self._focus_search()
+        elif ctrl and key.lower() == "n":
+            self._set_active_tab("vault")
+
+    def _focus_search(self) -> None:
+        try:
+            self.search_field.focus()
+        except Exception:
+            pass
+
     def _dispatch_to_ui(self, callback: Any) -> None:
         """Hand callback to Flet's executor: page controls are not thread-safe."""
         try:
@@ -296,7 +330,7 @@ class LuxCipherFletApp:
         self.page.padding = 0
 
         try:
-            self.page.on_keyboard_event = lambda _: self.record_activity()
+            self.page.on_keyboard_event = self._on_keyboard
         except Exception:
             pass
 
@@ -304,10 +338,10 @@ class LuxCipherFletApp:
             self.page.window.title_bar_hidden = True
             self.page.window.title_bar_buttons_hidden = True
             self.page.window.frameless = True
-            self.page.window.width = 520
-            self.page.window.height = 760
-            self.page.window.min_width = 460
-            self.page.window.min_height = 680
+            self.page.window.width = 640
+            self.page.window.height = 860
+            self.page.window.min_width = 520
+            self.page.window.min_height = 720
             self.page.window.prevent_close = False
             self.page.window.on_event = self._on_window_event
             if hasattr(self.page, "run_task") and hasattr(self.page.window, "center"):
@@ -670,6 +704,7 @@ class LuxCipherFletApp:
                 master_key = derive_master_key(password, salt_path=self._salt_path)
                 self.account_store.open(master_key)
                 self.account_store.set_account_username(username)
+                self._current_key = master_key
             except Exception as error:
                 self._show_snackbar(str(error), is_error=True)
                 return
@@ -682,6 +717,7 @@ class LuxCipherFletApp:
             try:
                 master_key = derive_master_key(password, salt_path=self._salt_path)
                 self.account_store.open(master_key)
+                self._current_key = master_key
 
                 # A missing username means this is not a vault set up by the app:
                 # an empty database file accepts any key, so treating None as a
@@ -739,26 +775,27 @@ class LuxCipherFletApp:
                             ),
                         ],
                     ),
-                    ft.Container(
-                        content=ft.Row(
-                            [
-                                ft.Icon(ft.Icons.LOGOUT_ROUNDED, color="#FDA4AF", size=13),
-                                ft.Text("Esci", color="#FDA4AF", size=11, weight=ft.FontWeight.W_600),
-                            ],
-                            spacing=4,
-                            tight=True,
-                        ),
-                        bgcolor="#2A1520",
-                        border=ft.Border(
-                            top=ft.BorderSide(1, "#4C1D2A"),
-                            right=ft.BorderSide(1, "#4C1D2A"),
-                            bottom=ft.BorderSide(1, "#4C1D2A"),
-                            left=ft.BorderSide(1, "#4C1D2A"),
-                        ),
-                        border_radius=14,
-                        padding=make_padding(horizontal=10, vertical=5),
-                        on_click=lambda _: self._lock_vault(),
-                        ink=True,
+                    ft.Row(
+                        spacing=2,
+                        tight=True,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                        controls=[
+                            ft.IconButton(
+                                icon=ft.Icons.BACKUP_OUTLINED,
+                                icon_color=TEXT_MUTED,
+                                icon_size=16,
+                                tooltip="Crea un backup del vault",
+                                on_click=lambda _: self._create_backup(),
+                            ),
+                            ft.IconButton(
+                                icon=ft.Icons.KEY_OUTLINED,
+                                icon_color=TEXT_MUTED,
+                                icon_size=16,
+                                tooltip="Cambia master password",
+                                on_click=lambda _: self._open_change_master_password(),
+                            ),
+                            self._build_logout_pill(),
+                        ],
                     ),
                 ],
             ),
@@ -828,6 +865,25 @@ class LuxCipherFletApp:
             ),
         )
 
+    def _build_logout_pill(self) -> ft.Control:
+        return ft.Container(
+            content=ft.Row(
+                [
+                    ft.Icon(ft.Icons.LOGOUT_ROUNDED, color="#FDA4AF", size=13),
+                    ft.Text("Esci", color="#FDA4AF", size=11, weight=ft.FontWeight.W_600),
+                ],
+                spacing=4,
+                tight=True,
+            ),
+            bgcolor="#2A1520",
+            border=make_border("#4C1D2A"),
+            border_radius=14,
+            padding=make_padding(horizontal=10, vertical=5),
+            tooltip="Blocca il vault (Esc)",
+            on_click=lambda _: self._lock_vault(),
+            ink=True,
+        )
+
     def _set_active_tab(self, tab_name: str) -> None:
         self.record_activity()
         self.active_tab = tab_name
@@ -876,7 +932,13 @@ class LuxCipherFletApp:
         account_cards: list[ft.Control] = []
         for acc in accounts:
             acc_id, srv, uname, pwd = acc[0], acc[1], acc[2], acc[3]
-            display_pwd = pwd if self.show_passwords_in_table else ("•" * min(len(pwd), 10))
+            updated_at = acc[5] if len(acc) > 5 else ""
+            revealed = self.show_passwords_in_table or acc_id in self.revealed_ids
+            display_pwd = pwd if revealed else ("•" * min(len(pwd), 12))
+
+            subtitle = uname or "(nessun username)"
+            if updated_at:
+                subtitle = f"{subtitle}  ·  agg. {updated_at[:10]}"
 
             card = ft.Container(
                 bgcolor=BG_CARD,
@@ -889,28 +951,316 @@ class LuxCipherFletApp:
                     controls=[
                         ft.Column(
                             spacing=2,
+                            expand=True,
                             controls=[
                                 ft.Text(srv, weight=ft.FontWeight.W_700, size=13, color=TEXT_WHITE),
-                                ft.Text(uname, size=11, color=TEXT_MUTED),
-                                ft.Text(display_pwd, size=12, color=CYAN_ACCENT, font_family="Consolas"),
+                                ft.Text(subtitle, size=11, color=TEXT_MUTED),
+                                ft.Text(
+                                    display_pwd,
+                                    size=12,
+                                    color=CYAN_ACCENT,
+                                    font_family="Consolas",
+                                    selectable=revealed,
+                                ),
                             ],
                         ),
-                        ft.Container(
-                            content=ft.IconButton(
-                                icon=ft.Icons.CONTENT_COPY_ROUNDED,
-                                icon_color=EMERALD_ACCENT,
-                                icon_size=16,
-                                tooltip="Copia Password",
-                                on_click=lambda _, p=pwd: self._copy_to_clipboard(p),
-                            ),
-                            bgcolor="#192C26",
-                            border_radius=10,
+                        ft.Row(
+                            spacing=0,
+                            tight=True,
+                            controls=[
+                                self._card_action(
+                                    ft.Icons.VISIBILITY_OFF_ROUNDED if revealed else ft.Icons.VISIBILITY_ROUNDED,
+                                    TEXT_MUTED,
+                                    "Nascondi" if revealed else "Mostra",
+                                    lambda _, i=acc_id: self._toggle_revealed(i),
+                                ),
+                                self._card_action(
+                                    ft.Icons.PERSON_OUTLINE_ROUNDED,
+                                    CYAN_ACCENT,
+                                    "Copia username",
+                                    lambda _, u=uname: self._copy_to_clipboard(u, "Username copiato!"),
+                                ),
+                                self._card_action(
+                                    ft.Icons.CONTENT_COPY_ROUNDED,
+                                    EMERALD_ACCENT,
+                                    "Copia password",
+                                    lambda _, x=pwd: self._copy_to_clipboard(x),
+                                ),
+                                self._card_action(
+                                    ft.Icons.EDIT_ROUNDED,
+                                    PURPLE_HOVER,
+                                    "Modifica",
+                                    lambda _, i=acc_id: self._open_edit_dialog(i),
+                                ),
+                                self._card_action(
+                                    ft.Icons.DELETE_OUTLINE_ROUNDED,
+                                    ROSE_DANGER,
+                                    "Elimina",
+                                    lambda _, i=acc_id, n=srv: self._confirm_delete(i, n),
+                                ),
+                            ],
                         ),
                     ],
                 ),
             )
             account_cards.append(card)
         return account_cards
+
+    def _card_action(self, icon: str, color: str, tooltip: str, on_click: Any) -> ft.Control:
+        return ft.IconButton(
+            icon=icon, icon_color=color, icon_size=15, tooltip=tooltip, on_click=on_click
+        )
+
+    def _toggle_revealed(self, account_id: int) -> None:
+        self.record_activity()
+        if account_id in self.revealed_ids:
+            self.revealed_ids.discard(account_id)
+        else:
+            self.revealed_ids.add(account_id)
+        self._refresh_cards()
+
+    def _refresh_cards(self) -> None:
+        """Rebuild only the list, so typing and scrolling are not interrupted."""
+        try:
+            self.cards_list.controls = self._get_account_cards()
+            self.cards_list.update()
+        except Exception:
+            self.render()
+
+    # --- dialogs ---
+
+    def _close_dialog(self) -> None:
+        try:
+            self.page.pop_dialog()
+        except Exception:
+            pass
+
+    def _show_dialog(self, dialog: ft.AlertDialog) -> None:
+        try:
+            self.page.show_dialog(dialog)
+        except Exception:
+            self._show_snackbar("Impossibile aprire la finestra", is_error=True)
+
+    def _dialog_field(self, label: str, value: str, password: bool = False) -> ft.TextField:
+        return ft.TextField(
+            label=label,
+            value=value,
+            password=password,
+            can_reveal_password=password,
+            bgcolor=BG_INPUT,
+            border_color=BORDER_COLOR,
+            focused_border_color=BORDER_FOCUS,
+            border_radius=10,
+            color=TEXT_WHITE,
+            text_size=13,
+            content_padding=make_padding(horizontal=12, vertical=10),
+        )
+
+    def _open_edit_dialog(self, account_id: int) -> None:
+        self.record_activity()
+        row = self.account_store.get_account(account_id)
+        if row is None:
+            self._show_snackbar("Credenziale non trovata", is_error=True)
+            self._refresh_cards()
+            return
+
+        service_field = self._dialog_field("Servizio", row[1])
+        user_field = self._dialog_field("Username o email", row[2])
+        pwd_field = self._dialog_field("Password", row[3], password=True)
+
+        def save(_: Any) -> None:
+            self.record_activity()
+            try:
+                self.account_store.update_account(
+                    account_id,
+                    (service_field.value or "").strip(),
+                    (user_field.value or "").strip(),
+                    pwd_field.value or "",
+                )
+            except (ValueError, AccountStoreError) as error:
+                self._show_snackbar(f"Modifica non riuscita: {error}", is_error=True)
+                return
+            self._close_dialog()
+            self._show_snackbar("Credenziale aggiornata!")
+            self._refresh_cards()
+
+        def regenerate(_: Any) -> None:
+            self.record_activity()
+            self._generate_pwd()
+            if self.generated_pwd_value:
+                pwd_field.value = self.generated_pwd_value
+                try:
+                    pwd_field.update()
+                except Exception:
+                    pass
+
+        self._show_dialog(
+            ft.AlertDialog(
+                modal=True,
+                bgcolor=BG_CARD,
+                title=ft.Text("Modifica credenziale", color=TEXT_WHITE, size=16),
+                content=ft.Column(
+                    tight=True,
+                    spacing=10,
+                    width=360,
+                    controls=[
+                        service_field,
+                        user_field,
+                        pwd_field,
+                        ft.TextButton(
+                            "Genera una nuova password",
+                            icon=ft.Icons.AUTO_FIX_HIGH_ROUNDED,
+                            on_click=regenerate,
+                        ),
+                    ],
+                ),
+                actions=[
+                    ft.TextButton("Annulla", on_click=lambda _: self._close_dialog()),
+                    ft.FilledButton("Salva", on_click=save),
+                ],
+                actions_alignment=ft.MainAxisAlignment.END,
+            )
+        )
+
+    def _confirm_delete(self, account_id: int, service: str) -> None:
+        self.record_activity()
+
+        def do_delete(_: Any) -> None:
+            try:
+                self.account_store.delete_account(account_id)
+            except AccountStoreError as error:
+                self._show_snackbar(str(error), is_error=True)
+                return
+            self.revealed_ids.discard(account_id)
+            self._close_dialog()
+            self._show_snackbar(f"{service} eliminata")
+            self.render()
+
+        self._show_dialog(
+            ft.AlertDialog(
+                modal=True,
+                bgcolor=BG_CARD,
+                title=ft.Text("Eliminare la credenziale?", color=TEXT_WHITE, size=16),
+                content=ft.Text(
+                    f"{service} verra eliminata definitivamente. "
+                    "Non e possibile recuperarla.",
+                    color=TEXT_MUTED,
+                    size=13,
+                ),
+                actions=[
+                    ft.TextButton("Annulla", on_click=lambda _: self._close_dialog()),
+                    ft.FilledButton(
+                        "Elimina",
+                        style=ft.ButtonStyle(bgcolor=ROSE_DANGER, color=TEXT_WHITE),
+                        on_click=do_delete,
+                    ),
+                ],
+                actions_alignment=ft.MainAxisAlignment.END,
+            )
+        )
+
+    def _open_change_master_password(self) -> None:
+        self.record_activity()
+        current = self._dialog_field("Master password attuale", "", password=True)
+        new = self._dialog_field("Nuova master password", "", password=True)
+        confirm = self._dialog_field("Conferma nuova master password", "", password=True)
+
+        def apply(_: Any) -> None:
+            self.record_activity()
+            salt = get_or_create_salt(self._salt_path)
+
+            if derive_master_key(current.value or "", salt=salt) != self._current_key:
+                self._show_snackbar("La master password attuale non e corretta", is_error=True)
+                return
+            if (new.value or "") != (confirm.value or ""):
+                self._show_snackbar("Le nuove master password non coincidono", is_error=True)
+                return
+            if not is_master_password_strong_enough(new.value or ""):
+                self._show_snackbar(
+                    f"La nuova master password deve avere almeno "
+                    f"{MIN_MASTER_PASSWORD_LENGTH} caratteri",
+                    is_error=True,
+                )
+                return
+
+            new_key = derive_master_key(new.value or "", salt=salt)
+            try:
+                self.account_store.change_master_key(new_key)
+            except Exception as error:
+                self._show_snackbar(f"Cambio non riuscito: {error}", is_error=True)
+                return
+
+            self._current_key = new_key
+            self._close_dialog()
+            self._show_snackbar("Master password aggiornata!")
+
+        self._show_dialog(
+            ft.AlertDialog(
+                modal=True,
+                bgcolor=BG_CARD,
+                title=ft.Text("Cambia master password", color=TEXT_WHITE, size=16),
+                content=ft.Column(
+                    tight=True,
+                    spacing=10,
+                    width=360,
+                    controls=[
+                        ft.Text(
+                            "Il vault viene ricifrato con la nuova password. "
+                            "Il file vault.salt resta necessario.",
+                            color=TEXT_MUTED,
+                            size=12,
+                        ),
+                        current,
+                        new,
+                        confirm,
+                    ],
+                ),
+                actions=[
+                    ft.TextButton("Annulla", on_click=lambda _: self._close_dialog()),
+                    ft.FilledButton("Cambia", on_click=apply),
+                ],
+                actions_alignment=ft.MainAxisAlignment.END,
+            )
+        )
+
+    def _create_backup(self) -> None:
+        self.record_activity()
+        try:
+            destination = self.account_store.backup_to(default_backup_dir())
+        except Exception as error:
+            self._show_snackbar(f"Backup non riuscito: {error}", is_error=True)
+            return
+
+        self._show_dialog(
+            ft.AlertDialog(
+                modal=True,
+                bgcolor=BG_CARD,
+                title=ft.Text("Backup creato", color=TEXT_WHITE, size=16),
+                content=ft.Column(
+                    tight=True,
+                    spacing=8,
+                    width=380,
+                    controls=[
+                        ft.Text(str(destination), color=CYAN_ACCENT, size=12, selectable=True),
+                        ft.Text(
+                            "La copia contiene vault.db e vault.salt. Servono entrambi: "
+                            "il database da solo non e apribile.",
+                            color=TEXT_MUTED,
+                            size=12,
+                        ),
+                        ft.Text(
+                            "Il backup e cifrato con la master password che stai usando "
+                            "adesso. Se in futuro la cambi, questa copia continuera a "
+                            "richiedere quella vecchia.",
+                            color=TEXT_MUTED,
+                            size=12,
+                        ),
+                    ],
+                ),
+                actions=[ft.FilledButton("Ho capito", on_click=lambda _: self._close_dialog())],
+                actions_alignment=ft.MainAxisAlignment.END,
+            )
+        )
 
     def _build_credentials_tab(self) -> ft.Control:
         accounts = []
@@ -1122,8 +1472,11 @@ class LuxCipherFletApp:
         except Exception:
             self.render()
 
-    def _copy_to_clipboard(self, text: str) -> None:
+    def _copy_to_clipboard(self, text: str, label: str = "Password copiata!") -> None:
         self.record_activity()
+        if not text:
+            self._show_snackbar("Niente da copiare", is_error=True)
+            return
         set_system_clipboard(text)
         try:
             self.page.clipboard.set(text)
@@ -1132,7 +1485,7 @@ class LuxCipherFletApp:
 
         self._schedule_clipboard_clear(text)
         self._show_snackbar(
-            f"Password copiata! Gli appunti si svuotano tra "
+            f"{label} Gli appunti si svuotano tra "
             f"{int(self.clipboard_clear_seconds)}s."
         )
 
@@ -1433,6 +1786,8 @@ class LuxCipherFletApp:
         self.account_store.close()
         self.auth_mode = "login"
         self.current_username = ""
+        self._current_key = None
+        self.revealed_ids.clear()
         self.render()
 
 

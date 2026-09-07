@@ -20,6 +20,7 @@ falls short of one, the gap is recorded under Early Threat Model below.
 - Keep account data on the device only.
 - Keep every credential field inside the encrypted database, including the
   service name and the username.
+- Confirm before destroying anything the user cannot get back.
 - Never destroy key material to recover from an error. Refuse and report
   instead, so a recoverable vault is never made unrecoverable.
 
@@ -68,6 +69,16 @@ It never stores the master password or the derived master key.
 Both files are required. The salt is never regenerated when the existing file is
 the wrong size, because doing so would derive a different key and leave the
 database permanently undecryptable while reporting only a wrong password.
+
+The master password can be changed from inside an unlocked vault. `PRAGMA rekey`
+re-encrypts every page under the key derived from the new password. The salt is
+deliberately left alone: rotating it as well would invalidate every existing
+backup without warning.
+
+Backups copy the database and the salt together into a timestamped folder under
+the user's Documents directory. Copying only the database would produce a file
+that can never be opened. A backup keeps the key it was written with, so a
+backup taken before a password change still needs the older password.
 
 None of this makes a weak master password safe: an attacker holding the database
 can guess offline, bounded only by Argon2id. A strong master password remains

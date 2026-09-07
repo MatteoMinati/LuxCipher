@@ -7,6 +7,17 @@ Devilishly simple security for your passwords.
 LuxCipher is a password manager project built step by step, with security and
 clarity as first-class goals.
 
+## Features
+
+- Store, search, edit and delete credentials in an encrypted vault.
+- Generate strong passwords, with a strength meter based on estimated entropy.
+- Copy a username or password to the clipboard; it is erased 30 seconds later.
+- Change the master password, which re-encrypts the whole vault.
+- Back up the vault and its salt together, in one click.
+- Automatic lock after 20 minutes of inactivity.
+
+Keyboard: `Esc` locks the vault, `Ctrl+F` jumps to the search box.
+
 ## Project Goals
 
 - Store passwords only in encrypted form.
@@ -92,8 +103,13 @@ Where LuxCipher keeps your data:
 - `%LOCALAPPDATA%\LuxCipher\vault.salt` — the Argon2id salt.
 
 Both are required to unlock the vault. **Back them up together**: the database
-cannot be decrypted without its salt, and there is no recovery path. Set
-`LUXCIPHER_HOME` to keep them somewhere else.
+cannot be decrypted without its salt, and there is no recovery path. The backup
+button in the app does exactly that, writing both files into a timestamped
+folder under `Documents\LuxCipher Backups`. Set `LUXCIPHER_HOME` to keep the
+live vault somewhere else.
+
+A backup stays encrypted with the master password that was in force when it was
+taken, so changing the master password later does not update older backups.
 
 Regenerate implementation notes PDF (needs `pip install -r requirements-dev.txt`):
 

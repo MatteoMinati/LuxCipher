@@ -59,19 +59,32 @@ Current status:
   left in freed pages or spill files.
 - The username is stored in an encrypted `metadata` table, not in the clear.
 
-## Step 4: Basic Operations — partly done
+## Step 4: Basic Operations — done
 
-- Create a vault. — done
-- Unlock a vault. — done
-- Add an entry. — done
-- List and search entries. — done
-- Read one entry. — done
-- Update an entry. — not implemented.
-- Delete an entry. — not implemented.
+- Create a vault, unlock it, add, list, search, read, update and delete an
+  entry are all implemented.
+- Credentials carry `created_at` and `updated_at` stamps. Vaults written before
+  those columns existed are migrated in place on open, keeping empty stamps
+  rather than inventing times.
+- Deleting asks for confirmation first, because there is no undo and no
+  recycle bin.
 
-## Step 5: Tests
+## Step 5: Key And Vault Management — done
+
+- The master password can be changed. `PRAGMA rekey` re-encrypts every page
+  under the new key. The Argon2id salt does not change, so `vault.salt` stays
+  valid and still has to be kept.
+- The vault can be backed up. `VACUUM INTO` writes a consistent encrypted
+  snapshot without closing the vault, and the salt is copied beside it, because
+  a database without its salt can never be opened again.
+- A backup stays encrypted under the master password in force when it was
+  taken. Changing the master password afterwards does not re-key old backups.
+
+## Step 6: Tests
 
 - Test unlock failure with a wrong password. — done
 - Test that the database is unreadable on disk. — done
-- Test CRUD behavior without real passwords. — pending update and delete.
+- Test CRUD behaviour without real passwords. — done
+- Test schema migration from an older vault. — done
+- Test re-keying and backup round-trips. — done
 - Test corrupted vault detection.

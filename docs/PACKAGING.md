@@ -36,8 +36,14 @@ the point of an offline installer and is a poor property for a security tool.
 `flet build windows` compiles a genuine Flutter application instead, so the
 client is part of the build rather than a first-run download. The cost is a
 heavier toolchain: it needs the Flutter SDK and Visual Studio Build Tools,
-which is why the workflow installs Flutter through `subosito/flutter-action`
-and why the runner image is `windows-latest` rather than anything smaller.
+which is why the runner image is `windows-latest` rather than anything smaller.
+
+The workflow does not install Flutter itself. Each Flet release requires one
+specific Flutter major.minor version, and `flet build` refuses any other: with
+a mismatched SDK on PATH it stops to ask whether to install the right one,
+which fails in CI because nobody can answer. Passing `--yes` lets Flet install
+exactly the version it needs, so the Flutter version follows the Flet pin in
+`requirements.txt` instead of being a second number to keep in sync by hand.
 
 ## Native dependencies
 

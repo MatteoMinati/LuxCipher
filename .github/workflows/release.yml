@@ -23,14 +23,6 @@ jobs:
         with:
           python-version: "3.13"
 
-      # flet build compiles a real Flutter application. Without this the
-      # packaged app would still download the Flet desktop client on first
-      # launch, which is wrong for an offline installer.
-      - uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-          cache: true
-
       - name: Resolve version
         id: version
         shell: bash
@@ -53,8 +45,12 @@ jobs:
       - name: Run tests
         run: python -m unittest discover -s tests
 
+      # --yes: Flet installs the exact Flutter version it requires (see
+      # docs/PACKAGING.md). PYTHONUTF8 stops its console output crashing on cp1252.
       - name: Build Windows app
-        run: flet build windows --module-name luxcipher --product LuxCipher --build-version ${{ steps.version.outputs.value }}
+        env:
+          PYTHONUTF8: "1"
+        run: flet build windows --yes --no-rich-output --module-name luxcipher --product LuxCipher --build-version ${{ steps.version.outputs.value }}
 
       - name: Locate build output
         id: build_output
